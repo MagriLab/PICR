@@ -9,3 +9,8 @@ class eDecoder(enum.Enum):
 class eSolverFunction(enum.Enum):
     LINEAR = 'LINEAR'
     NONLINEAR = 'NONLINEAR'
+
+
+class eCorruption(enum.Enum):
+    ACKLEY = 'ACKLEY'
+    RASTRIGIN = 'RASTRIGIN'
