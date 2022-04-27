@@ -1,4 +1,4 @@
-from typing import List, Optional, Union
+from typing import List, Union
 
 import torch
 import torch.nn as nn
@@ -23,7 +23,7 @@ class BaseEncoderDecoder(nn.Module):
                  nx: int,
                  nc: int,
                  layers: List[int],
-                 latent_dim: Optional[int] = None,
+                 latent_dim: int,
                  activation: nn.Module = nn.Tanh(),
                  dropout: float = 0.0,
                  batch_norm: bool = False) -> None:
@@ -38,7 +38,7 @@ class BaseEncoderDecoder(nn.Module):
             Number of channels / velocities.
         layers: List[int]
             List of layer sizes to use in the encoder / decoder.
-        latent_dim: Optional[int]
+        latent_dim: int
             Size of the latent space.
         activation: nn.Module
             Activation to use for the network.
@@ -80,8 +80,8 @@ class Autoencoder(BaseEncoderDecoder):
                  nx: int,
                  nc: int,
                  layers: List[int],
-                 latent_dim: Optional[int],
-                 decoder: eDecoder = eDecoder.upsampling,
+                 latent_dim: int,
+                 decoder: eDecoder = eDecoder.UPSAMPLING,
                  activation: nn.Module = nn.Tanh(),
                  dropout: float = 0.0,
                  batch_norm: bool = False) -> None:
@@ -96,7 +96,7 @@ class Autoencoder(BaseEncoderDecoder):
             Number of channels / velocities.
         layers: List[int]
             List of layer sizes to use in the encoder / decoder.
-        latent_dim: Optional[int]
+        latent_dim: int
             Size of the latent space.
         decoder: eDecoder
             Type of decoder to use, i.e: UpsamplingDecoder, TransposeDecoder.
@@ -118,9 +118,9 @@ class Autoencoder(BaseEncoderDecoder):
 
         # define decoder
         self.decoder: Union[UpsamplingDecoder, TransposeDecoder]
-        if decoder == eDecoder.upsampling:
+        if decoder == eDecoder.UPSAMPLING:
             self.decoder = UpsamplingDecoder(nx, nc, layers, latent_dim, activation, dropout, batch_norm)
-        elif decoder == eDecoder.transpose:
+        elif decoder == eDecoder.TRANSPOSE:
             self.decoder = TransposeDecoder(nx, nc, layers, latent_dim, activation, dropout, batch_norm)
         else:
             raise ValueError('Invalid eDecoder instance given.')
@@ -153,7 +153,7 @@ class Encoder(BaseEncoderDecoder):
                  nx: int,
                  nc: int,
                  layers: List[int],
-                 latent_dim: Optional[int],
+                 latent_dim: int,
                  activation: nn.Module = nn.Tanh(),
                  dropout: float = 0.0,
                  batch_norm: bool = False) -> None:
@@ -208,7 +208,7 @@ class Encoder(BaseEncoderDecoder):
 
         # define linear architecture -- transformation to latent space
         linear_layers: List[nn.Module] = []
-        if self.latent_dim:
+        if self.latent_dim > 0:
 
             linear_layers.extend([
                 nn.Flatten(start_dim=2),
@@ -249,7 +249,7 @@ class UpsamplingDecoder(BaseEncoderDecoder):
                  nx: int,
                  nc: int,
                  layers: List[int],
-                 latent_dim: Optional[int],
+                 latent_dim: int,
                  activation: nn.Module = nn.Tanh(),
                  dropout: float = 0.0,
                  batch_norm: bool = False) -> None:
@@ -264,7 +264,7 @@ class UpsamplingDecoder(BaseEncoderDecoder):
             Number of channels / velocities.
         layers: List[int]
             List of layer sizes to use in the encoder / decoder.
-        latent_dim: Optional[int]
+        latent_dim: int
             Size of the latent space.
         activation: nn.Module
             Activation to use for the network.
@@ -316,7 +316,7 @@ class UpsamplingDecoder(BaseEncoderDecoder):
 
         # define linear architecture -- transformation from latent space
         linear_layers: List[nn.Module] = []
-        if self.latent_dim:
+        if self.latent_dim > 0:
 
             linear_layers.extend([
                 TimeDistributedLinear(self.latent_dim, self.prelatent_shape),
@@ -358,7 +358,7 @@ class TransposeDecoder(BaseEncoderDecoder):
                  nx: int,
                  nc: int,
                  layers: List[int],
-                 latent_dim: Optional[int],
+                 latent_dim: int,
                  activation: nn.Module = nn.ReLU(inplace=True),
                  dropout: float = 0.0,
                  batch_norm: bool = False) -> None:
@@ -373,7 +373,7 @@ class TransposeDecoder(BaseEncoderDecoder):
             Number of channels / velocities.
         layers: List[int]
             List of layer sizes to use in the encoder / decoder.
-        latent_dim: Optional[int]
+        latent_dim: int
             Size of the latent space.
         activation: nn.Module
             Activation to use for the network.
@@ -420,7 +420,7 @@ class TransposeDecoder(BaseEncoderDecoder):
 
         # define linear architecture -- transformation from latent space
         linear_layers: List[nn.Module] = []
-        if self.latent_dim:
+        if self.latent_dim > 0:
 
             linear_layers.extend([
                 TimeDistributedLinear(self.latent_dim, self.prelatent_shape),

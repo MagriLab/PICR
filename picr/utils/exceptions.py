@@ -1,5 +1,7 @@
 from typing import Optional
 
+from .enums import eSolverFunction
+
 
 class DimensionWarning(Warning):
 
@@ -60,3 +62,24 @@ class DimensionError(Exception):
             return 'Expected / Received are identical, please check logic...'
 
         return f'Expected array with ndim={self.expected}, received ndim={self.received}'
+
+
+class SolverConsistencyError(Exception):
+
+    def __init__(self, solver_type: eSolverFunction) -> None:
+
+        super().__init__()
+
+        self.solver_type = solver_type
+
+    def __str__(self) -> str:
+
+        msg = f'You selected a solver type of: {str(self.solver_type)}, '
+
+        if self.solver_type == eSolverFunction.LINEAR:
+            msg += 'please ensure NF = 0, C > 0'
+
+        if self.solver_type == eSolverFunction.NONLINEAR:
+            msg += 'please ensure NF > 0'
+
+        return msg
