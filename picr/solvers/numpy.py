@@ -24,7 +24,7 @@ class LinearCDS(KolSol):
             Number of dimensions to solve for.
         """
 
-        super().__init__(nk, 0.0, re, ndim)
+        super().__init__(nk=nk, nf=0.0, re=re, ndim=ndim)
 
         self.c = c
         self.nu = 1.0 / re
@@ -109,7 +109,7 @@ class NonLinearKFS(KolSol):
             Number of dimensions to solve for.
         """
 
-        super().__init__(nk, nf, re, ndim)
+        super().__init__(nk=nk, nf=nf, re=re, ndim=ndim)
 
     def g_u_phi(self, u_hat: np.ndarray, phi_hat: np.ndarray) -> np.ndarray:
 
