@@ -6,7 +6,7 @@ import h5py
 import numpy as np
 import tqdm
 
-from picr.solver.numpy import LinearCDS
+from picr.solvers.numpy import LinearCDS
 
 
 def setup_directory(path: Path) -> None:

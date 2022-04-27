@@ -6,7 +6,8 @@ import einops
 import h5py
 import numpy as np
 import tqdm
-from kolsol.numpy.solver import KolSol
+
+from picr.solvers.numpy import NonLinearKFS
 
 
 def setup_directory(path: Path) -> None:
@@ -50,7 +51,7 @@ def write_h5(path: Path, data: Dict[str, Any]) -> None:
 
 def main(args: argparse.Namespace) -> None:
 
-    """Run Kolmogorov flow solver.
+    """Run Kolmogorov flow solvers.
 
     Parameters
     ----------
@@ -62,7 +63,7 @@ def main(args: argparse.Namespace) -> None:
 
     setup_directory(args.data_path)
 
-    ks = KolSol(nk=args.nk, nf=args.nf, re=args.re, ndim=args.ndim)
+    ks = NonLinearKFS(nk=args.nk, nf=args.nf, re=args.re, ndim=args.ndim)
     field_hat = ks.random_field(magnitude=10.0, sigma=2.0)
 
     # define time-arrays for simulation run

@@ -28,7 +28,7 @@ class ExperimentConfig:
     BATCH_NORM: bool = field(init=False)
     DECODER: eDecoder = field(init=False)
 
-    # solver parameters
+    # solvers parameters
     SOLVER_FN: eSolverFunction = field(init=False)
 
     NK: int = field(init=False)
