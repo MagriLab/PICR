@@ -1,5 +1,6 @@
-import opt_einsum as oe
+from typing import Union
 
+import opt_einsum as oe
 import torch
 from kolsol.torch.solver import KolSol
 
@@ -8,7 +9,12 @@ from ..utils.exceptions import DimensionError
 
 class LinearCDS(KolSol):
 
-    def __init__(self, nk: int, c: float, re: float, ndim: int = 2) -> None:
+    def __init__(self,
+                 nk: int,
+                 c: float,
+                 re: float,
+                 ndim: int = 2,
+                 device: Union[torch.device, str] = torch.device('cpu')) -> None:
 
         """Linear Convection-Diffusion Solver.
 
@@ -22,9 +28,11 @@ class LinearCDS(KolSol):
             Reynolds number of the flow.
         ndim: int, default=2
             Number of dimensions to solve for.
+        device: Union[torch.device, str]
+            Device on which to run solver.
         """
 
-        super().__init__(nk=nk, nf=0.0, re=re, ndim=ndim)
+        super().__init__(nk=nk, nf=0.0, re=re, ndim=ndim, device=device)
 
         self.c = c
         self.nu = 1.0 / re
@@ -93,7 +101,12 @@ class LinearCDS(KolSol):
 
 class NonLinearKFS(KolSol):
 
-    def __init__(self, nk: int, nf: int, re: float, ndim: int = 2) -> None:
+    def __init__(self,
+                 nk: int,
+                 nf: int,
+                 re: float,
+                 ndim: int = 2,
+                 device: Union[torch.device, str] = torch.device('cpu')) -> None:
 
         """Non-Linear Kolmogorov Flow Solver.
 
@@ -107,9 +120,11 @@ class NonLinearKFS(KolSol):
             Reynolds number of the flow.
         ndim: int, default=2
             Number of dimensions to solve for.
+        device: Union[torch.device, str]
+            Device on which to run solver.
         """
 
-        super().__init__(nk, nf, re, ndim)
+        super().__init__(nk=nk, nf=nf, re=re, ndim=ndim, device=device)
 
     def g_u_phi(self, u_hat: torch.Tensor, phi_hat: torch.Tensor) -> torch.Tensor:
 
