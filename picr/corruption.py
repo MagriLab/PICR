@@ -67,4 +67,4 @@ def rastrigin(x: T, freq: float) -> T:
     else:
         raise ValueError('Unsupported data structure.')
 
-    return 10.0 * 2 + oe.contract('iju -> ij', x ** 2 - 10.0 * lib.cos(freq * (x - np.pi)))
+    return 10.0 * 2 + oe.contract('iju -> ij', (x - np.pi) ** 2 - 10.0 * lib.cos(freq * (x - np.pi)))
