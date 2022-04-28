@@ -107,7 +107,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Generate Linear Convection-Diffusion Data.')
 
     # arguments to define output
-    parser.add_argument('--experiments-path', type=Path, required=True)
+    parser.add_argument('--data-path', type=Path, required=True)
     parser.add_argument('--resolution', type=int, required=True)
 
     # arguments to define simulation
