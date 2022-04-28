@@ -10,7 +10,7 @@ T = TypeVar('T', np.ndarray, torch.Tensor)
 
 
 @ValidateDimension(ndim=3)
-def ackley(x: T, freq: float) -> T:
+def ackley(x: T, freq: float, limit: float = 1.0) -> T:
 
     """Generic implementation of Ackley function -- parameterised by frequency.
 
@@ -20,6 +20,8 @@ def ackley(x: T, freq: float) -> T:
         Spatial grid on which to compute the Ackley function.
     freq: float
         Parameterised frequency of the Ackley function.
+    limit: float
+        Largest value in the corruption field.
 
     Returns
     -------
@@ -39,11 +41,13 @@ def ackley(x: T, freq: float) -> T:
 
     fx = -20 * lib.exp(t1) - lib.exp(t2) + 20 + lib.exp(1)
 
+    fx = limit * (fx - lib.min(fx)) / (lib.max(fx) - lib.min(fx))
+
     return fx
 
 
 @ValidateDimension(ndim=3)
-def rastrigin(x: T, freq: float) -> T:
+def rastrigin(x: T, freq: float, limit: float = 1.0) -> T:
 
     """Generic implementation of Rastrigin function -- parameterised by frequency.
 
@@ -53,6 +57,8 @@ def rastrigin(x: T, freq: float) -> T:
         Spatial grid on which to compute the Rastrigin function.
     freq: float
         Parameterised frequency of the Rastrigin function.
+    limit: float
+        Largest value in the corruption field.
 
     Returns
     -------
@@ -67,4 +73,7 @@ def rastrigin(x: T, freq: float) -> T:
     else:
         raise ValueError('Unsupported data structure.')
 
-    return 10.0 * 2 + oe.contract('iju -> ij', (x - np.pi) ** 2 - 10.0 * lib.cos(freq * (x - np.pi)))
+    val = 10.0 * 2 + oe.contract('iju -> ij', (x - np.pi) ** 2 - 10.0 * lib.cos(freq * (x - np.pi)))
+    val = limit * (val - lib.min(val)) / (lib.max(val) - lib.min(val))
+
+    return val

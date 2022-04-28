@@ -6,7 +6,6 @@ from shutil import copyfile
 from typing import Union
 
 import numpy as np
-import opt_einsum as oe
 import torch
 import torch.nn as nn
 import wandb
@@ -128,24 +127,26 @@ def train(train_loader: DataLoader,
             data = data.to(DEVICE)
 
             # create corrupted data
-            phi = phi_fn(xx, freq=config.PHI_FREQ)
+            phi = phi_fn(xx, freq=config.PHI_FREQ, limit=config.PHI_LIMIT)
             zeta = data + phi
 
             # predict phi
-            phi_prediction = model(zeta)
+            u_prediction = model(zeta)
+            phi_prediction = zeta - u_prediction
 
-            # 01 :: Clean Velocity Field :: || R([u + \phi] - \hat{\phi}) || = 0
-            r_zeta_phi_loss = piml_loss_fn.calc_residual(zeta - phi_prediction)
+            # 01 :: Clean Velocity Field :: || R(\hat{u}) || = 0
+            r_zeta_phi_loss = piml_loss_fn.calc_residual(u_prediction)
 
-            # 02 :: Residual Matching :: || R(u + \phi) - R(\hat{phi}) - g([u + \phi] - \hat{\phi}, \hat{\phi}) || = 0
+            # 02 :: Residual Matching :: || R(u + \phi) - R(\hat{phi}) - g(\hat{u}, \hat{\phi}) || = 0
             r_zeta = piml_loss_fn.calc_residual(zeta)
             r_phi = piml_loss_fn.calc_residual(phi_prediction)
-            g_u_phi = piml_loss_fn.calc_g_u_phi(zeta - phi_prediction, phi_prediction)
+            g_u_phi = piml_loss_fn.calc_g_u_phi(u_prediction, phi_prediction)
 
             r_g_loss = torch.abs(r_zeta - r_phi - g_u_phi)
 
             # 03 :: Total Loss
             total_loss = r_zeta_phi_loss + r_g_loss
+            total_loss *= config.LOSS_SCALING
 
             # 04 :: Phi Loss -- Clean
             clean_loss = mse_loss_fn(phi, phi_prediction)
@@ -168,28 +169,26 @@ def train(train_loader: DataLoader,
             data = data.to(DEVICE)
 
             # create corrupted data
-            phi = phi_fn(xx, freq=config.PHI_FREQ)
+            phi = phi_fn(xx, freq=config.PHI_FREQ, limit=config.PHI_LIMIT)
             zeta = data + phi
 
             # predict phi
-            phi_prediction = model(zeta)
+            u_prediction = model(zeta)
+            phi_prediction = zeta - u_prediction
 
-            # calculate losses
+            # 01 :: Clean Velocity Field :: || R(\hat{u}) || = 0
+            r_zeta_phi_loss = piml_loss_fn.calc_residual(u_prediction)
 
-            # 01 :: Clean Velocity Field :: || R([u + \phi] - \hat{\phi}) || = 0
-            r_zeta_phi = piml_loss_fn.calc_residual(zeta - phi_prediction)
-            r_zeta_phi_loss = config.DT ** 2 * oe.contract('btuij -> ', torch.abs(r_zeta_phi) ** 2) / r_zeta_phi.numel()
-
-            # 02 :: Residual Matching :: || R(u + \phi) - R(\hat{phi}) - g([u + \phi] - \hat{\phi}, \hat{\phi}) || = 0
+            # 02 :: Residual Matching :: || R(u + \phi) - R(\hat{phi}) - g(\hat{\u}, \hat{\phi}) || = 0
             r_zeta = piml_loss_fn.calc_residual(zeta)
             r_phi = piml_loss_fn.calc_residual(phi_prediction)
-            g_u_phi = piml_loss_fn.calc_g_u_phi(zeta - phi_prediction, phi_prediction)
+            g_u_phi = piml_loss_fn.calc_g_u_phi(u_prediction, phi_prediction)
 
-            r_lhs = r_zeta - r_phi - g_u_phi
-            r_g_loss = config.DT ** 2 * oe.contract('btuij -> ', torch.abs(r_lhs) ** 2) / r_lhs.numel()
+            r_g_loss = torch.abs(r_zeta - r_phi - g_u_phi)
 
             # 03 :: Total Loss
             total_loss = r_zeta_phi_loss + r_g_loss
+            total_loss *= config.LOSS_SCALING
 
             # 04 :: Phi Loss -- Clean
             clean_loss = mse_loss_fn(phi, phi_prediction)
