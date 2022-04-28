@@ -36,14 +36,14 @@ class LinearCDLoss:
             Device on which to initialise the tensors.
         """
 
-        self.cds = LinearCDS(nk=nk, c=c, re=re, ndim=2, device=device)
+        self.solver = LinearCDS(nk=nk, c=c, re=re, ndim=2, device=device)
         self.dt = dt
 
-        self.fwt = torch.abs((fwt_lb ** -(1.0 / self.cds.nk)) ** -torch.sqrt(self.cds.kk / self.cds.ndim))
+        self.fwt = torch.abs((fwt_lb ** -(1.0 / self.solver.nk)) ** -torch.sqrt(self.solver.kk / self.solver.ndim))
 
     @ValidateDimension(ndim=5)
     def g_u_phi(self, u_hat: torch.Tensor, phi_hat: torch.Tensor) -> torch.Tensor:
-        return self.cds.g_u_phi(u_hat, phi_hat)[:, :-1, ...]
+        return self.solver.g_u_phi(u_hat, phi_hat)[:, :-1, ...]
 
     @ValidateDimension(ndim=5)
     def residual(self, u_hat: torch.Tensor) -> torch.Tensor:
@@ -64,7 +64,7 @@ class LinearCDLoss:
         u_hat = einops.rearrange(u_hat, 'b t u i j -> b t i j u')
 
         # compute analytical derivatives
-        a_dudt_hat = self.cds.dynamics(u_hat).to(u_hat.dtype)
+        a_dudt_hat = self.solver.dynamics(u_hat).to(u_hat.dtype)
         a_dudt_hat = a_dudt_hat[:, 1:, ...]
 
         # compute empirical derivatives
@@ -108,14 +108,14 @@ class NonLinearKFLoss:
             Device on which to initialise the tensors.
         """
 
-        self.ks = NonLinearKFS(nk=nk, nf=nf, re=re, ndim=2, device=device)
+        self.solver = NonLinearKFS(nk=nk, nf=nf, re=re, ndim=2, device=device)
         self.dt = dt
 
-        self.fwt = torch.abs((fwt_lb ** -(1.0 / self.ks.nk)) ** -torch.sqrt(self.ks.kk / self.ks.ndim))
+        self.fwt = torch.abs((fwt_lb ** -(1.0 / self.solver.nk)) ** -torch.sqrt(self.solver.kk / self.solver.ndim))
 
     @ValidateDimension(ndim=5)
     def g_u_phi(self, u_hat: torch.Tensor, phi_hat: torch.Tensor) -> torch.Tensor:
-        return self.ks.g_u_phi(u_hat, phi_hat)[:, :-1, ...]
+        return self.solver.g_u_phi(u_hat, phi_hat)[:, :-1, ...]
 
     @ValidateDimension(ndim=5)
     def residual(self, u_hat: torch.Tensor) -> torch.Tensor:
@@ -136,7 +136,7 @@ class NonLinearKFLoss:
         u_hat = einops.rearrange(u_hat, 'b t u i j -> b t i j u')
 
         # compute analytical derivatives
-        a_dudt_hat = self.ks.dynamics(u_hat).to(u_hat.dtype)
+        a_dudt_hat = self.solver.dynamics(u_hat).to(u_hat.dtype)
         a_dudt_hat = a_dudt_hat[:, 1:, ...]
 
         # compute empirical derivatives
