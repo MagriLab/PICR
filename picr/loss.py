@@ -98,7 +98,6 @@ class LinearCDLoss:
         fwt_e_dudt_hat = oe.contract('ij, btiju -> btiju', self.fwt, e_dudt_hat)
 
         residual = fwt_a_dudt_hat - fwt_e_dudt_hat
-        residual = einops.rearrange(residual, 'b t i j u -> b t u i j')
 
         return residual
 
@@ -181,8 +180,6 @@ class NonLinearKFLoss:
             Residual of the field in the Fourier domain.
         """
 
-        u_hat = einops.rearrange(u_hat, 'b t u i j -> b t i j u')
-
         # compute analytical derivatives
         a_dudt_hat = self.solver.dynamics(u_hat).to(u_hat.dtype)
         a_dudt_hat = a_dudt_hat[:, 1:, ...]
@@ -195,6 +192,5 @@ class NonLinearKFLoss:
         fwt_e_dudt_hat = oe.contract('ij, btiju -> btiju', self.fwt, e_dudt_hat)
 
         residual = fwt_a_dudt_hat - fwt_e_dudt_hat
-        residual = einops.rearrange(residual, 'b t i j u -> b t u i j')
 
         return residual

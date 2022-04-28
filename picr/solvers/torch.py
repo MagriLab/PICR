@@ -37,6 +37,9 @@ class LinearCDS(KolSol):
         self.c = c
         self.nu = 1.0 / re
 
+        self.kk = self.kk.to(torch.cfloat)
+        self.nabla = self.nabla.to(torch.cfloat)
+
     def dynamics(self, u_hat: torch.Tensor) -> torch.Tensor:
 
         """Calculate the time-derivative of the velocity field.
