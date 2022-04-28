@@ -1,5 +1,6 @@
 from typing import Union
 
+import einops
 import opt_einsum as oe
 import torch
 
@@ -42,7 +43,7 @@ class LinearCDLoss:
 
     @ValidateDimension(ndim=5)
     def g_u_phi(self, u_hat: torch.Tensor, phi_hat: torch.Tensor) -> torch.Tensor:
-        return self.cds.g_u_phi(u_hat, phi_hat)
+        return self.cds.g_u_phi(u_hat, phi_hat)[:, :-1, ...]
 
     @ValidateDimension(ndim=5)
     def residual(self, u_hat: torch.Tensor) -> torch.Tensor:
@@ -60,6 +61,8 @@ class LinearCDLoss:
             Residual of the field in the Fourier domain.
         """
 
+        u_hat = einops.rearrange(u_hat, 'b t u i j -> b t i j u')
+
         # compute analytical derivatives
         a_dudt_hat = self.cds.dynamics(u_hat).to(u_hat.dtype)
         a_dudt_hat = a_dudt_hat[:, 1:, ...]
@@ -72,6 +75,7 @@ class LinearCDLoss:
         fwt_e_dudt_hat = oe.contract('ij, btiju -> btiju', self.fwt, e_dudt_hat)
 
         residual = fwt_a_dudt_hat - fwt_e_dudt_hat
+        residual = einops.rearrange(residual, 'b t i j u -> b t u i j')
 
         return residual
 
@@ -111,7 +115,7 @@ class NonLinearKFLoss:
 
     @ValidateDimension(ndim=5)
     def g_u_phi(self, u_hat: torch.Tensor, phi_hat: torch.Tensor) -> torch.Tensor:
-        return self.ks.g_u_phi(u_hat, phi_hat)
+        return self.ks.g_u_phi(u_hat, phi_hat)[:, :-1, ...]
 
     @ValidateDimension(ndim=5)
     def residual(self, u_hat: torch.Tensor) -> torch.Tensor:
@@ -129,6 +133,8 @@ class NonLinearKFLoss:
             Residual of the field in the Fourier domain.
         """
 
+        u_hat = einops.rearrange(u_hat, 'b t u i j -> b t i j u')
+
         # compute analytical derivatives
         a_dudt_hat = self.ks.dynamics(u_hat).to(u_hat.dtype)
         a_dudt_hat = a_dudt_hat[:, 1:, ...]
@@ -141,5 +147,6 @@ class NonLinearKFLoss:
         fwt_e_dudt_hat = oe.contract('ij, btiju -> btiju', self.fwt, e_dudt_hat)
 
         residual = fwt_a_dudt_hat - fwt_e_dudt_hat
+        residual = einops.rearrange(residual, 'b t i j u -> b t u i j')
 
         return residual

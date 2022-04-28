@@ -13,7 +13,7 @@ from ..utils.dataset import UnlabeledTensorDataset
 from ..utils.enums import eSolverFunction
 
 
-def load_data(h5_file: Path, config: ExperimentConfig, t_stack: int) -> torch.Tensor:
+def load_data(h5_file: Path, config: ExperimentConfig) -> torch.Tensor:
 
     """Loads simulation data as torch.Tensor.
 
@@ -23,8 +23,6 @@ def load_data(h5_file: Path, config: ExperimentConfig, t_stack: int) -> torch.Te
         Path to the .h5 file containing simulation data.
     config: ExperimentConfig
         Configuration object holding key information about simulation.
-    t_stack: int
-        Number of consecutive timesteps to stack.
 
     Returns
     -------
@@ -56,7 +54,7 @@ def load_data(h5_file: Path, config: ExperimentConfig, t_stack: int) -> torch.Te
 
     # stack N consecutive time-steps in a new dimension
     list_u = []
-    for i, j in zip(range(t_stack), map(operator.neg, reversed(range(t_stack)))):
+    for i, j in zip(range(config.TIME_STACK), map(operator.neg, reversed(range(config.TIME_STACK)))):
         sl = slice(i, j) if j < 0 else slice(i, None)
         list_u.append(u_all[sl])
 
