@@ -136,7 +136,7 @@ def train(train_loader: DataLoader,
 
             # 01 :: Clean Velocity Field :: || R([u + \phi] - \hat{\phi}) || = 0
             r_zeta_phi = piml_loss_fn.calc_residual(zeta - phi_prediction)
-            r_zeta_phi_loss = config.DT ** 2 * oe.contract('btuij -> ', r_zeta_phi ** 2) / r_zeta_phi.numel()
+            r_zeta_phi_loss = config.DT ** 2 * oe.contract('btuij -> ', torch.abs(r_zeta_phi) ** 2) / r_zeta_phi.numel()
 
             # 02 :: Residual Matching :: || R(u + \phi) - R(\hat{phi}) - g([u + \phi] - \hat{\phi}, \hat{\phi}) || = 0
             r_zeta = piml_loss_fn.calc_residual(zeta)
@@ -144,7 +144,7 @@ def train(train_loader: DataLoader,
             g_u_phi = piml_loss_fn.calc_g_u_phi(zeta - phi_prediction, phi_prediction)
 
             r_lhs = r_zeta - r_phi - g_u_phi
-            r_g_loss = config.DT ** 2 * oe.contract('btuij -> ', r_lhs ** 2) / r_lhs.numel()
+            r_g_loss = config.DT ** 2 * oe.contract('btuij -> ', torch.abs(r_lhs) ** 2) / r_lhs.numel()
 
             # 03 :: Total Loss
             total_loss = r_zeta_phi_loss + r_g_loss
