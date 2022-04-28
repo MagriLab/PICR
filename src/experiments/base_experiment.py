@@ -49,7 +49,7 @@ def train(train_loader: DataLoader,
 
     # define spatial grid for phi
     x = torch.linspace(0.0, 2.0 * np.pi, config.NX)
-    xx = torch.stack(torch.meshgrid(x, x, indexing='ij'), dim=-1).to(DEVICE)
+    xx = torch.stack(torch.meshgrid(x, x), dim=-1).to(DEVICE)
 
     # get activation function
     activation_fn = getattr(nn, config.ACTIVATION)()
