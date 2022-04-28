@@ -27,10 +27,17 @@ def ackley(x: T, freq: float) -> T:
         Ackley function on given grid.
     """
 
-    t1 = -0.2 * np.sqrt(oe.contract('iju -> ij', (x - np.pi) ** 2) / 2)
-    t2 = oe.contract('iju -> ij', np.cos(freq * (x - np.pi))) / 2
+    if isinstance(x, np.ndarray):
+        lib = np
+    elif isinstance(x, torch.Tensor):
+        lib = torch
+    else:
+        raise ValueError('Unsupported data structure.')
 
-    fx = -20 * np.exp(t1) - np.exp(t2) + 20 + np.exp(1)
+    t1 = -0.2 * lib.sqrt(oe.contract('iju -> ij', (x - np.pi) ** 2) / 2)
+    t2 = oe.contract('iju -> ij', lib.cos(freq * (x - np.pi))) / 2
+
+    fx = -20 * lib.exp(t1) - lib.exp(t2) + 20 + lib.exp(1)
 
     return fx
 
@@ -53,4 +60,11 @@ def rastrigin(x: T, freq: float) -> T:
         Rastrigin function on given grid.
     """
 
-    return 10.0 * 2 + oe.contract('iju -> ij', x ** 2 - 10.0 * np.cos(freq * (x - np.pi)))
+    if isinstance(x, np.ndarray):
+        lib = np
+    elif isinstance(x, torch.Tensor):
+        lib = torch
+    else:
+        raise ValueError('Unsupported data structure.')
+
+    return 10.0 * 2 + oe.contract('iju -> ij', x ** 2 - 10.0 * lib.cos(freq * (x - np.pi)))
