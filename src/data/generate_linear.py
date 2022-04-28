@@ -1,4 +1,5 @@
 import argparse
+import sys
 from pathlib import Path
 from typing import Any, Dict
 
@@ -6,6 +7,7 @@ import h5py
 import numpy as np
 import tqdm
 
+sys.path.append('../..')
 from picr.solvers.numpy import LinearCDS
 
 
