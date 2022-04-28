@@ -4,7 +4,7 @@ from typing import Any, Dict
 import yaml
 from dataclasses import dataclass, field, fields
 
-from .enums import eDecoder, eSolverFunction
+from .enums import eCorruption, eDecoder, eSolverFunction
 from .exceptions import SolverConsistencyError
 
 
@@ -15,6 +15,7 @@ class ExperimentConfig:
     # data parameters
     NTRAIN: int = field(init=False)
     NVALIDATION: int = field(init=False)
+    TIME_STACK: int = field(init=False)
 
     # model parameters
     N_EPOCHS: int = field(init=False)
@@ -43,8 +44,11 @@ class ExperimentConfig:
     NU: int = field(init=False)
 
     # corruption parameters
-    PHI_FN: str = field(init=False)
+    PHI_FN: eCorruption = field(init=False)
     PHI_FREQ: float = field(init=False)
+
+    # loss parameters
+    FWT_LB: float = field(init=False)
 
     def load_config(self, config_path: Path) -> None:
 
