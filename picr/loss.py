@@ -42,11 +42,36 @@ class LinearCDLoss:
         self.fwt = torch.abs((fwt_lb ** -(1.0 / self.solver.nk)) ** -torch.sqrt(self.solver.kk / self.solver.ndim))
 
     @ValidateDimension(ndim=5)
-    def g_u_phi(self, u_hat: torch.Tensor, phi_hat: torch.Tensor) -> torch.Tensor:
+    def calc_g_u_phi(self, u: torch.Tensor, phi: torch.Tensor) -> torch.Tensor:
+
+        u = einops.rearrange(u, 'b t u i j -> b t i j u')
+        phi = einops.rearrange(phi, 'b t u i j -> b t i j u')
+
+        u_hat = self.solver.phys_to_fourier(u)
+        phi_hat = self.solver.phys_to_fourier(phi)
+
+        guphi_hat = self._g_u_phi(u_hat, phi_hat)
+        guphi_hat = einops.rearrange(guphi_hat, 'b t i j u -> b t u i j')
+
+        return guphi_hat
+
+    @ValidateDimension(ndim=5)
+    def _g_u_phi(self, u_hat: torch.Tensor, phi_hat: torch.Tensor) -> torch.Tensor:
         return self.solver.g_u_phi(u_hat, phi_hat)[:, :-1, ...]
 
     @ValidateDimension(ndim=5)
-    def residual(self, u_hat: torch.Tensor) -> torch.Tensor:
+    def calc_residual(self, u: torch.Tensor) -> torch.Tensor:
+
+        u = einops.rearrange(u, 'b t u i j -> b t i j u')
+        u_hat = self.solver.phys_to_fourier(u)
+
+        residual_hat = self._residual(u_hat)
+        residual_hat = einops.rearrange(residual_hat, 'b t i j u -> b t u i j')
+
+        return residual_hat
+
+    @ValidateDimension(ndim=5)
+    def _residual(self, u_hat: torch.Tensor) -> torch.Tensor:
 
         """Calculates residual of the given field.
 
@@ -60,8 +85,6 @@ class LinearCDLoss:
         residual: torch.Tensor
             Residual of the field in the Fourier domain.
         """
-
-        u_hat = einops.rearrange(u_hat, 'b t u i j -> b t i j u')
 
         # compute analytical derivatives
         a_dudt_hat = self.solver.dynamics(u_hat).to(u_hat.dtype)
@@ -114,11 +137,36 @@ class NonLinearKFLoss:
         self.fwt = torch.abs((fwt_lb ** -(1.0 / self.solver.nk)) ** -torch.sqrt(self.solver.kk / self.solver.ndim))
 
     @ValidateDimension(ndim=5)
-    def g_u_phi(self, u_hat: torch.Tensor, phi_hat: torch.Tensor) -> torch.Tensor:
+    def calc_g_u_phi(self, u: torch.Tensor, phi: torch.Tensor) -> torch.Tensor:
+
+        u = einops.rearrange(u, 'b t u i j -> b t i j u')
+        phi = einops.rearrange(phi, 'b t u i j -> b t i j u')
+
+        u_hat = self.solver.phys_to_fourier(u)
+        phi_hat = self.solver.phys_to_fourier(phi)
+
+        guphi_hat = self._g_u_phi(u_hat, phi_hat)
+        guphi_hat = einops.rearrange(guphi_hat, 'b t i j u -> b t u i j')
+
+        return guphi_hat
+
+    @ValidateDimension(ndim=5)
+    def _g_u_phi(self, u_hat: torch.Tensor, phi_hat: torch.Tensor) -> torch.Tensor:
         return self.solver.g_u_phi(u_hat, phi_hat)[:, :-1, ...]
 
     @ValidateDimension(ndim=5)
-    def residual(self, u_hat: torch.Tensor) -> torch.Tensor:
+    def calc_residual(self, u: torch.Tensor) -> torch.Tensor:
+
+        u = einops.rearrange(u, 'b t u i j -> b t i j u')
+        u_hat = self.solver.phys_to_fourier(u)
+
+        residual_hat = self._residual(u_hat)
+        residual_hat = einops.rearrange(residual_hat, 'b t i j u -> b t u i j')
+
+        return residual_hat
+
+    @ValidateDimension(ndim=5)
+    def _residual(self, u_hat: torch.Tensor) -> torch.Tensor:
 
         """Calculates residual of the given field.
 

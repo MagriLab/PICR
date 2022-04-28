@@ -134,18 +134,14 @@ def train(train_loader: DataLoader,
             # predict phi
             phi_prediction = model(zeta)
 
-            # convert to Fourier domain
-            zeta_hat = piml_loss_fn.solver.phys_to_fourier(zeta)
-            phi_hat_prediction = piml_loss_fn.solver.phys_to_fourier(phi_prediction)
-
             # 01 :: Clean Velocity Field :: || R([u + \phi] - \hat{\phi}) || = 0
-            r_zeta_phi = piml_loss_fn.residual(zeta_hat - phi_hat_prediction)
+            r_zeta_phi = piml_loss_fn.calc_residual(zeta - phi_prediction)
             r_zeta_phi_loss = config.DT ** 2 * oe.contract('btuij -> ', r_zeta_phi ** 2) / r_zeta_phi.numel()
 
             # 02 :: Residual Matching :: || R(u + \phi) - R(\hat{phi}) - g([u + \phi] - \hat{\phi}, \hat{\phi}) || = 0
-            r_zeta = piml_loss_fn.residual(zeta_hat)
-            r_phi = piml_loss_fn.residual(phi_hat_prediction)
-            g_u_phi = piml_loss_fn.g_u_phi(zeta_hat - phi_hat_prediction, phi_hat_prediction)
+            r_zeta = piml_loss_fn.calc_residual(zeta)
+            r_phi = piml_loss_fn.calc_residual(phi_prediction)
+            g_u_phi = piml_loss_fn.calc_g_u_phi(zeta - phi_prediction, phi_prediction)
 
             r_lhs = r_zeta - r_phi - g_u_phi
             r_g_loss = config.DT ** 2 * oe.contract('btuij -> ', r_lhs ** 2) / r_lhs.numel()
@@ -183,13 +179,13 @@ def train(train_loader: DataLoader,
             # calculate losses
 
             # 01 :: Clean Velocity Field :: || R([u + \phi] - \hat{\phi}) || = 0
-            r_zeta_phi = piml_loss_fn.residual(zeta - phi_prediction)
+            r_zeta_phi = piml_loss_fn.calc_residual(zeta - phi_prediction)
             r_zeta_phi_loss = config.DT ** 2 * oe.contract('btuij -> ', r_zeta_phi ** 2) / r_zeta_phi.numel()
 
             # 02 :: Residual Matching :: || R(u + \phi) - R(\hat{phi}) - g([u + \phi] - \hat{\phi}, \hat{\phi}) || = 0
-            r_zeta = piml_loss_fn.residual(zeta)
-            r_phi = piml_loss_fn.residual(phi_prediction)
-            g_u_phi = piml_loss_fn.g_u_phi(zeta - phi_prediction, phi_prediction)
+            r_zeta = piml_loss_fn.calc_residual(zeta)
+            r_phi = piml_loss_fn.calc_residual(phi_prediction)
+            g_u_phi = piml_loss_fn.calc_g_u_phi(zeta - phi_prediction, phi_prediction)
 
             r_lhs = r_zeta - r_phi - g_u_phi
             r_g_loss = config.DT ** 2 * oe.contract('btuij -> ', r_lhs ** 2) / r_lhs.numel()
