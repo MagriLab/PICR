@@ -138,6 +138,9 @@ def train(train_loader: DataLoader,
 
             # 01 :: Clean Velocity Field :: || R(\hat{u}) || = 0
             r_zeta_phi_loss = piml_loss_fn.calc_residual(u_prediction)
+            r_zeta_phi_loss = oe.contract('... -> ', torch.abs(r_zeta_phi_loss) ** 2) / r_zeta_phi_loss.numel()
+
+            r_zeta_phi_loss *= config.LOSS_SCALING
 
             # 02 :: Residual Matching :: || R(u + \phi) - R(\hat{phi}) - g(\hat{u}, \hat{\phi}) || = 0
             r_zeta = piml_loss_fn.calc_residual(zeta)
@@ -147,9 +150,10 @@ def train(train_loader: DataLoader,
             residual = r_zeta - r_phi
             r_g_loss = oe.contract('... -> ', (torch.abs(residual) - torch.abs(g_u_phi)) ** 2) / residual.numel()
 
+            r_g_loss *= config.LOSS_SCALING
+
             # 03 :: Total Loss
             total_loss = r_zeta_phi_loss + r_g_loss
-            total_loss *= config.LOSS_SCALING
 
             # 04 :: Phi Loss -- Clean
             clean_loss = mse_loss_fn(phi, phi_prediction)
@@ -181,6 +185,9 @@ def train(train_loader: DataLoader,
 
             # 01 :: Clean Velocity Field :: || R(\hat{u}) || = 0
             r_zeta_phi_loss = piml_loss_fn.calc_residual(u_prediction)
+            r_zeta_phi_loss = oe.contract('... -> ', torch.abs(r_zeta_phi_loss) ** 2) / r_zeta_phi_loss.numel()
+
+            r_zeta_phi_loss *= config.LOSS_SCALING
 
             # 02 :: Residual Matching :: || R(u + \phi) - R(\hat{phi}) - g(\hat{\u}, \hat{\phi}) || = 0
             r_zeta = piml_loss_fn.calc_residual(zeta)
@@ -190,9 +197,10 @@ def train(train_loader: DataLoader,
             residual = r_zeta - r_phi
             r_g_loss = oe.contract('... -> ', (torch.abs(residual) - torch.abs(g_u_phi)) ** 2) / residual.numel()
 
+            r_g_loss *= config.LOSS_SCALING
+
             # 03 :: Total Loss
             total_loss = r_zeta_phi_loss + r_g_loss
-            total_loss *= config.LOSS_SCALING
 
             # 04 :: Phi Loss -- Clean
             clean_loss = mse_loss_fn(phi, phi_prediction)

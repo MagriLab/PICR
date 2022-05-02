@@ -78,7 +78,7 @@ def main(args: argparse.Namespace) -> None:
     dissipation_arr = np.zeros(shape=(nt, 1))
 
     # integrate over simulation domain
-    msg = '01 :: Integrating over simulation domain.'
+    msg = '01 :: Integrating over simulation domain'
     for t in tqdm.trange(nt, desc=msg):
 
         # time integrate
