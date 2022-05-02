@@ -42,10 +42,6 @@ def load_data(h5_file: Path, config: ExperimentConfig) -> torch.Tensor:
             if not np.array(hf.get('c')) == np.array(config.C):
                 config_mismatch.append('c')
 
-        if config.SOLVER_FN == eSolverFunction.NONLINEAR:
-            if not np.array(hf.get('nf')) == np.array(config.NF):
-                config_mismatch.append('nf')
-
         if config_mismatch:
             raise ValueError(f'Configuration does not match simulation: {config_mismatch}')
 
@@ -53,6 +49,10 @@ def load_data(h5_file: Path, config: ExperimentConfig) -> torch.Tensor:
         u_all = np.array(hf.get('velocity_field'))
 
     # stack N consecutive time-steps in a new dimension
+
+    # TODO :: If u_all.shape[0] % config.TIME_STACK == 0 then can use:
+    #           einops.rearrange(u_all, '(b t) i j u -> b t u i j', t=config.TIME_STACK)
+
     list_u = []
     for i, j in zip(range(config.TIME_STACK), map(operator.neg, reversed(range(config.TIME_STACK)))):
         sl = slice(i, j) if j < 0 else slice(i, None)
@@ -61,6 +61,8 @@ def load_data(h5_file: Path, config: ExperimentConfig) -> torch.Tensor:
     u_all = np.stack(list_u, axis=1)
 
     u_all = einops.rearrange(u_all, 'b t i j u -> b t u i j')
+
+    # TODO :: Do we want to use torch.float or torch.double here?
     u_all = torch.from_numpy(u_all).to(torch.float)
 
     return u_all

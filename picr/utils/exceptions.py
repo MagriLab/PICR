@@ -76,10 +76,25 @@ class SolverConsistencyError(Exception):
 
         msg = f'You selected a solver type of: {str(self.solver_type)}, '
 
-        if self.solver_type == eSolverFunction.LINEAR:
-            msg += 'please ensure NF = 0, C > 0'
+        if self.solver_type == eSolverFunction.NONLINEAR:
+            msg += 'please ensure C = 0'
+
+        return msg
+
+
+class SolverConsistencyWarning(Warning):
+
+    def __init__(self, solver_type: eSolverFunction) -> None:
+
+        super().__init__()
+
+        self.solver_type = solver_type
+
+    def __str__(self) -> str:
+
+        msg = f'You selected a solver type of: {str(self.solver_type)}, '
 
         if self.solver_type == eSolverFunction.NONLINEAR:
-            msg += 'please ensure NF > 0'
+            msg += 'please note that C = 0 :: solving diffusion only.'
 
         return msg
