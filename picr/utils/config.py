@@ -5,7 +5,7 @@ import yaml
 from dataclasses import dataclass, field, fields
 
 from .enums import eCorruption, eDecoder, eSolverFunction
-from .exceptions import SolverConsistencyError
+from .exceptions import SolverConsistencyError, SolverConsistencyWarning
 
 
 @dataclass
@@ -33,7 +33,6 @@ class ExperimentConfig:
     SOLVER_FN: eSolverFunction = field(init=False)
 
     NK: int = field(init=False)
-    NF: int = field(init=False)
     DT: float = field(init=False)
 
     C: float = field(init=False)
@@ -95,10 +94,10 @@ class ExperimentConfig:
 
     def _check_consistency(self) -> None:
 
-        if self.SOLVER_FN == eSolverFunction.LINEAR and (self.NF > 0 or self.C == 0):
-            raise SolverConsistencyError(solver_type=self.SOLVER_FN)
+        if self.SOLVER_FN == eSolverFunction.LINEAR and self.C == 0:
+            raise SolverConsistencyWarning(solver_type=self.SOLVER_FN)
 
-        if self.SOLVER_FN == eSolverFunction.NONLINEAR and self.NF == 0:
+        if self.SOLVER_FN == eSolverFunction.NONLINEAR and self.C > 0:
             raise SolverConsistencyError(solver_type=self.SOLVER_FN)
 
     @property
