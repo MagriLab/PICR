@@ -65,7 +65,7 @@ def main(args: argparse.Namespace) -> None:
     setup_directory(args.data_path)
 
     ks = NonlinearCDS(nk=args.nk, re=args.re, ndim=args.ndim)
-    field_hat = ks.random_field(magnitude=100.0, sigma=2.0, k_offset=[0, 3])
+    field_hat = ks.random_field(magnitude=20.0, sigma=10.0, k_offset=[0, 3])
 
     # define time-arrays for simulation run
     t_arange = np.arange(0.0, args.time_simulation, args.dt)

@@ -158,7 +158,7 @@ class NonlinearCDS(KolSol):
 
         return dudt
 
-    def g_u_phi(self, u_hat: torch.Tensor, phi_hat: torch.Tensor) -> torch.Tensor:
+    def g_u_phi(self, u_hat: torch.Tensor, phi_hat: torch.Tensor, dt: float) -> torch.Tensor:
 
         """Calculate g(u, \phi) for the nonlinear convection diffusion equations.
 
@@ -168,6 +168,8 @@ class NonlinearCDS(KolSol):
             Predicted velocity field in the Fourier domain.
         phi_hat: torch.Tensor
             Predicted corruption field in the Fourier domain.
+        dt: float
+            Time-step of the simulation.
 
         Returns
         -------
@@ -190,9 +192,91 @@ class NonlinearCDS(KolSol):
         u_dot_nabla_phi = oe.contract('...t, ut... -> ...u', self.nabla, aapt)
         phi_dot_nabla_u = oe.contract('...t, tu... -> ...u', self.nabla, aapt)
 
-        guphi = u_dot_nabla_phi + phi_dot_nabla_u
+        # calculate u \cdot \nabla \u
+        uij_aapt = []
+        for u_i in range(self.ndim):
+
+            uj_aapt = []
+            for u_j in range(self.ndim):
+                uj_aapt.append(self.aap(u_hat[..., u_j], u_hat[..., u_i]))
+
+            uij_aapt.append(torch.stack(uj_aapt, dim=0))
+
+        aapt = torch.stack(uij_aapt, dim=0)
+
+        u_dot_nabla_u = oe.contract('...t, ut... -> ...u', self.nabla, aapt)
+        laplacian_u = self.nu * oe.contract('..., ...u -> ...u', self.kk, u_hat)
+
+        # time derivative and slice
+        du_dt = (1.0 / dt) * (u_hat[:, 1:, ...] - u_hat[:, :-1, ...])
+        u_dot_nabla_u = u_dot_nabla_u[:, :-1, ...]
+        u_dot_nabla_phi = u_dot_nabla_phi[:, :-1, ...]
+        phi_dot_nabla_u = phi_dot_nabla_u[:, :-1, ...]
+        laplacian_u = laplacian_u[:, :-1, ...]
+
+        guphi = du_dt + u_dot_nabla_u + u_dot_nabla_phi + phi_dot_nabla_u - laplacian_u
 
         return guphi
+
+    def h_u_phi(self, u_hat: torch.Tensor, phi_hat: torch.Tensor, dt: float) -> torch.Tensor:
+
+        """Calculate h(u, \phi) for the nonlinear convection diffusion equations.
+
+        Parameters
+        ----------
+        u_hat: torch.Tensor
+            Predicted velocity field in the Fourier domain.
+        phi_hat: torch.Tensor
+            Predicted corruption field in the Fourier domain.
+        dt: float
+            Time-step of the simulation.
+
+        Returns
+        -------
+        huphi: torch.Tensor
+            h(u, \phi) for the nonlinear convection diffusion equations.
+        """
+
+        # calculate u \cdot \nabla \phi, \phi \cdot \nabla u
+        uij_aapt = []
+        for u_i in range(self.ndim):
+
+            uj_aapt = []
+            for u_j in range(self.ndim):
+                uj_aapt.append(self.aap(u_hat[..., u_j], phi_hat[..., u_i]))
+
+            uij_aapt.append(torch.stack(uj_aapt, dim=0))
+
+        aapt = torch.stack(uij_aapt, dim=0)
+
+        u_dot_nabla_phi = oe.contract('...t, ut... -> ...u', self.nabla, aapt)
+        phi_dot_nabla_u = oe.contract('...t, tu... -> ...u', self.nabla, aapt)
+
+        # calculate \phi \cdot \nabla \phi
+        uij_aapt = []
+        for u_i in range(self.ndim):
+
+            uj_aapt = []
+            for u_j in range(self.ndim):
+                uj_aapt.append(self.aap(phi_hat[..., u_j], phi_hat[..., u_i]))
+
+            uij_aapt.append(torch.stack(uj_aapt, dim=0))
+
+        aapt = torch.stack(uij_aapt, dim=0)
+
+        phi_dot_nabla_phi = oe.contract('...t, ut... -> ...u', self.nabla, aapt)
+        laplacian_phi = self.nu * oe.contract('..., ...u -> ...u', self.kk, phi_hat)
+
+        # time derivative and slice
+        dphi_dt = (1.0 / dt) * (phi_hat[:, 1:, ...] - phi_hat[:, :-1, ...])
+        u_dot_nabla_phi = u_dot_nabla_phi[:, :-1, ...]
+        phi_dot_nabla_u = phi_dot_nabla_u[:, :-1, ...]
+        phi_dot_nabla_phi = phi_dot_nabla_phi[:, :-1, ...]
+        laplacian_phi = laplacian_phi[:, :-1, ...]
+
+        huphi = dphi_dt + u_dot_nabla_phi + phi_dot_nabla_u + phi_dot_nabla_phi - laplacian_phi
+
+        return huphi
 
     def pressure(self, u_hat: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError('NonlinearCDS::pressure()')
