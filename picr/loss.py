@@ -10,6 +10,9 @@ from .utils.checks import ValidateDimension
 
 class LinearCDLoss:
 
+    # TODO :: Add h(u, \phi)
+    #         Ensure that g(u, \phi) is correct implementation.
+
     def __init__(self,
                  nk: int,
                  c: float,
@@ -88,7 +91,10 @@ class LinearCDLoss:
             g(u, \phi) in the Fourier domain.
         """
 
-        return self.solver.g_u_phi(u_hat, phi_hat)[:, :-1, ...]
+        g_u_phi = self.solver.g_u_phi(u_hat, phi_hat)[:, :-1, ...]
+        fwt_g_u_phi = oe.contract('ij, btiju -> btiju', self.fwt, g_u_phi)
+
+        return fwt_g_u_phi
 
     @ValidateDimension(ndim=5)
     def calc_residual(self, u: torch.Tensor) -> torch.Tensor:
@@ -177,6 +183,40 @@ class NonlinearCDLoss:
         self.fwt = torch.abs((fwt_lb ** -(1.0 / self.solver.nk)) ** -torch.sqrt(self.solver.kk / self.solver.ndim))
 
     @ValidateDimension(ndim=5)
+    def calc_gh(self, u: torch.Tensor, phi: torch.Tensor) -> torch.Tensor:
+
+        """Calculate g(u, \phi), h(u, \phi) for the nonlinear convection diffusion equations.
+
+        Parameters
+        ----------
+        u: torch.Tensor
+            Velocity field in the physical domain.
+        phi: torch.Tensor
+            Corruption field in the physical domain.
+
+        Returns
+        -------
+        guphi_hat: torch.Tensor
+            g(u, \phi) in the Fourier domain.
+        huphi_hat: torch.Tensor
+            h(u, \phi) in the Fourier domain.
+        """
+
+        u = einops.rearrange(u, 'b t u i j -> b t i j u')
+        phi = einops.rearrange(phi, 'b t u i j -> b t i j u')
+
+        u_hat = self.solver.phys_to_fourier(u)
+        phi_hat = self.solver.phys_to_fourier(phi)
+
+        guphi_hat = self._g_u_phi(u_hat, phi_hat)
+        huphi_hat = self._h_u_phi(u_hat, phi_hat)
+
+        guphi_hat = einops.rearrange(guphi_hat, 'b t i j u -> b t u i j')
+        huphi_hat = einops.rearrange(huphi_hat, 'b t i j u -> b t u i j')
+
+        return guphi_hat, huphi_hat
+
+    @ValidateDimension(ndim=5)
     def calc_g_u_phi(self, u: torch.Tensor, phi: torch.Tensor) -> torch.Tensor:
 
         """Calculate g(u, \phi) for the nonlinear convection diffusion equations.
@@ -219,11 +259,66 @@ class NonlinearCDLoss:
 
         Returns
         -------
-        torch.Tensor
+        fwt_g_u_phi: torch.Tensor
             g(u, \phi) in the Fourier domain.
         """
 
-        return self.solver.g_u_phi(u_hat, phi_hat)[:, :-1, ...]
+        g_u_phi = self.solver.g_u_phi(u_hat, phi_hat, self.dt)
+        fwt_g_u_phi = oe.contract('ij, btiju -> btiju', self.fwt, g_u_phi)
+
+        return fwt_g_u_phi
+
+    @ValidateDimension(ndim=5)
+    def calc_h_u_phi(self, u: torch.Tensor, phi: torch.Tensor) -> torch.Tensor:
+
+        """Calculate h(u, \phi) for the nonlinear convection diffusion equations.
+
+        Parameters
+        ----------
+        u: torch.Tensor
+            Velocity field in the physical domain.
+        phi: torch.Tensor
+            Corruption field in the physical domain.
+
+        Returns
+        -------
+        huphi_hat: torch.Tensor
+            h(u, \phi) in the Fourier domain.
+        """
+
+        u = einops.rearrange(u, 'b t u i j -> b t i j u')
+        phi = einops.rearrange(phi, 'b t u i j -> b t i j u')
+
+        u_hat = self.solver.phys_to_fourier(u)
+        phi_hat = self.solver.phys_to_fourier(phi)
+
+        huphi_hat = self._h_u_phi(u_hat, phi_hat, self.dt)
+        huphi_hat = einops.rearrange(huphi_hat, 'b t i j u -> b t u i j')
+
+        return huphi_hat
+
+    @ValidateDimension(ndim=5)
+    def _h_u_phi(self, u_hat: torch.Tensor, phi_hat: torch.Tensor) -> torch.Tensor:
+
+        """Calculate h(u, \phi) for the nonlinear convection diffusion equations.
+
+        Parameters
+        ----------
+        u_hat: torch.Tensor
+            Velocity field in the Fourier domain.
+        phi_hat: torch.Tensor
+            Corruption field in the Fourier domain.
+
+        Returns
+        -------
+        fwt_h_u_phi: torch.Tensor
+            h(u, \phi) in the Fourier domain.
+        """
+
+        h_u_phi = self.solver.h_u_phi(u_hat, phi_hat, self.dt)
+        fwt_h_u_phi = oe.contract('ij, btiju -> btiju', self.fwt, h_u_phi)
+
+        return fwt_h_u_phi
 
     @ValidateDimension(ndim=5)
     def calc_residual(self, u: torch.Tensor) -> torch.Tensor:
