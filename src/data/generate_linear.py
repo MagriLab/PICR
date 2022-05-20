@@ -57,7 +57,7 @@ def main(args: argparse.Namespace) -> None:
     setup_directory(args.data_path)
 
     cds = LinearCDS(nk=args.nk, c=args.c, re=args.re, ndim=args.ndim)
-    field_hat = cds.random_field(magnitude=20.0, sigma=10.0, k_offset=[0, 3])
+    field_hat = cds.random_field(magnitude=10.0, sigma=1.2)
 
     # define time-arrays for simulation run
     t_arange = np.arange(0.0, args.time_simulation, args.dt)
