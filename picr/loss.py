@@ -255,12 +255,10 @@ class NonlinearCDLoss:
             Calculated g(u, \phi) in the Fourier domain.
         """
 
-        res_u = self._linear_residual(u_hat)
-
         u_dot_nabla_phi = self._x_dot_nabla_y(u_hat, phi_hat)
         phi_dot_nabla_u = self._x_dot_nabla_y(phi_hat, u_hat)
 
-        guphi = res_u + u_dot_nabla_phi + phi_dot_nabla_u
+        guphi = u_dot_nabla_phi + phi_dot_nabla_u
 
         return guphi
 
