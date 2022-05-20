@@ -14,3 +14,4 @@ class eSolverFunction(enum.Enum):
 class eCorruption(enum.Enum):
     ACKLEY = 'ACKLEY'
     RASTRIGIN = 'RASTRIGIN'
+    POWER = 'POWER'

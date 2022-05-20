@@ -65,7 +65,7 @@ def main(args: argparse.Namespace) -> None:
     setup_directory(args.data_path)
 
     ks = NonlinearCDS(nk=args.nk, re=args.re, ndim=args.ndim)
-    field_hat = ks.random_field(magnitude=20.0, sigma=10.0, k_offset=[0, 3])
+    field_hat = ks.random_field(magnitude=10.0, sigma=1.2)
 
     # define time-arrays for simulation run
     t_arange = np.arange(0.0, args.time_simulation, args.dt)
@@ -89,6 +89,8 @@ def main(args: argparse.Namespace) -> None:
         velocity_arr[t, ...] = ks.fourier_to_phys(field_hat, nref=args.resolution)
 
         dissipation_arr[t, ...] = ks.dissip(field_hat)
+
+    print(velocity_arr.dtype)
 
     data_dict = {
         're': args.re,

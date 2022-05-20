@@ -77,3 +77,38 @@ def rastrigin(x: T, freq: float, limit: float = 1.0) -> T:
     val = limit * (val - lib.min(val)) / (lib.max(val) - lib.min(val))
 
     return val
+
+
+@ValidateDimension(ndim=3)
+def power_fn(x: T, freq: float = 0.0, limit: float = 1.0) -> T:
+
+    """Generic implementation of sphere function.
+
+    Parameters
+    ----------
+    x: T
+        Spatial grid on which to compute the sphere function.
+    freq: float
+        Parameterised frequency -- not required in this case.
+    limit: float
+        Largest value in the corruption field.
+
+    Returns
+    -------
+    fx: T
+        sphere function on given grid.
+    """
+
+    if isinstance(x, np.ndarray):
+        lib = np
+    elif isinstance(x, torch.Tensor):
+        lib = torch
+    else:
+        raise ValueError('Unsupported data structure.')
+
+    fx = (x - np.pi) ** 2
+    fx = lib.sqrt(oe.contract('...u -> ...', fx ** 2))
+
+    fx = limit * (fx - lib.min(fx)) / (lib.max(fx) - lib.min(fx))
+
+    return fx

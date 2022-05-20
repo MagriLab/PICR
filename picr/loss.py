@@ -10,9 +10,6 @@ from .utils.checks import ValidateDimension
 
 class LinearCDLoss:
 
-    # TODO :: Add h(u, \phi)
-    #         Ensure that g(u, \phi) is correct implementation.
-
     def __init__(self,
                  nk: int,
                  c: float,
@@ -45,9 +42,63 @@ class LinearCDLoss:
         self.fwt = torch.abs((fwt_lb ** -(1.0 / self.solver.nk)) ** -torch.sqrt(self.solver.kk / self.solver.ndim))
 
     @ValidateDimension(ndim=5)
-    def calc_g_u_phi(self, u: torch.Tensor, phi: torch.Tensor) -> torch.Tensor:
+    def _linear_residual(self, t_hat: torch.Tensor) -> torch.Tensor:
 
-        """Calculate g(u, \phi) for the nonlinear convection diffusion equations.
+        """Calculate the residual of t_hat in the Fourier domain.
+
+        Parameters
+        ----------
+        t_hat: torch.Tensor
+            Tensor, t, in the Fourier domain.
+
+        Returns
+        -------
+        residual: torch.Tensor
+            Residual of tensor, t, in the Fourier domain.
+        """
+
+        # analytical derivative
+        a_dudt_hat = self.solver.dynamics(t_hat)
+        a_dudt_hat = a_dudt_hat[:, :-1, ...]
+
+        # empirical derivative
+        e_dudt_hat = (1.0 / self.dt) * (t_hat[:, 1:, ...] - t_hat[:, :-1, ...])
+
+        residual = a_dudt_hat - e_dudt_hat
+
+        return residual
+
+    @ValidateDimension(ndim=5)
+    def calc_residual_loss(self, u: torch.Tensor) -> torch.Tensor:
+
+        """Calculate the L2 norm of a field, u, in the Fourier domain.
+
+        Parameters
+        ----------
+        u: torch.Tensor
+            Field in the physical domain.
+
+        Returns
+        -------
+        loss: torch.Tensor
+            L2 norm of the field, calculated in the Fourier domain.
+        """
+
+        u = einops.rearrange(u, 'b t u i j -> b t i j u')
+        u_hat = self.solver.phys_to_fourier(u)
+
+        res_u = self._linear_residual(u_hat)
+        loss = oe.contract('... -> ', res_u * torch.conj(res_u)) / res_u.numel()
+
+        return loss
+
+    @ValidateDimension(ndim=5)
+    def calc_g_loss(self, u: torch.Tensor, phi: torch.Tensor) -> torch.Tensor:
+
+        """Calculates the g-loss based on matching residuals.
+
+        Note: in the linear case, this equates to finding the residual of the
+              velocity field -- there is no interaction of non-linearities.
 
         Parameters
         ----------
@@ -55,101 +106,15 @@ class LinearCDLoss:
             Velocity field in the physical domain.
         phi: torch.Tensor
             Corruption field in the physical domain.
-
-        Returns
-        -------
-        guphi_hat: torch.Tensor
-            g(u, \phi) in the Fourier domain.
-        """
-
-        u = einops.rearrange(u, 'b t u i j -> b t i j u')
-        phi = einops.rearrange(phi, 'b t u i j -> b t i j u')
-
-        u_hat = self.solver.phys_to_fourier(u)
-        phi_hat = self.solver.phys_to_fourier(phi)
-
-        guphi_hat = self._g_u_phi(u_hat, phi_hat)
-        guphi_hat = einops.rearrange(guphi_hat, 'b t i j u -> b t u i j')
-
-        return guphi_hat
-
-    @ValidateDimension(ndim=5)
-    def _g_u_phi(self, u_hat: torch.Tensor, phi_hat: torch.Tensor) -> torch.Tensor:
-
-        """Calculate g(u, \phi) for the nonlinear convection diffusion equations.
-
-        Parameters
-        ----------
-        u_hat: torch.Tensor
-            Velocity field in the Fourier domain.
-        phi_hat: torch.Tensor
-            Corruption field in the Fourier domain.
+            Note: this is not used in the linear case.
 
         Returns
         -------
         torch.Tensor
-            g(u, \phi) in the Fourier domain.
+            g-loss in the Fourier domain.
         """
 
-        g_u_phi = self.solver.g_u_phi(u_hat, phi_hat)[:, :-1, ...]
-        fwt_g_u_phi = oe.contract('ij, btiju -> btiju', self.fwt, g_u_phi)
-
-        return fwt_g_u_phi
-
-    @ValidateDimension(ndim=5)
-    def calc_residual(self, u: torch.Tensor) -> torch.Tensor:
-
-        """Calculate residual for the nonlinear convection diffusion equations.
-
-        Parameters
-        ----------
-        u: torch.Tensor
-            Velocity field in the physical domain.
-
-        Returns
-        -------
-        residual_hat: torch.Tensor
-            Residual in the Fourier domain.
-        """
-
-        u = einops.rearrange(u, 'b t u i j -> b t i j u')
-        u_hat = self.solver.phys_to_fourier(u)
-
-        residual_hat = self._residual(u_hat)
-        residual_hat = einops.rearrange(residual_hat, 'b t i j u -> b t u i j')
-
-        return residual_hat
-
-    @ValidateDimension(ndim=5)
-    def _residual(self, u_hat: torch.Tensor) -> torch.Tensor:
-
-        """Calculate residual for the nonlinear convection diffusion equations.
-
-        Parameters
-        ----------
-        u_hat: torch.Tensor
-            Velocity field in the Fourier domain.
-
-        Returns
-        -------
-        residual_hat: torch.Tensor
-            Residual in the Fourier domain.
-        """
-
-        # compute analytical derivatives
-        a_dudt_hat = self.solver.dynamics(u_hat).to(u_hat.dtype)
-        a_dudt_hat = a_dudt_hat[:, :-1, ...]
-
-        # compute empirical derivatives
-        e_dudt_hat = (1.0 / self.dt) * (u_hat[:, 1:, ...] - u_hat[:, :-1, ...])
-
-        # scale derivative fields
-        fwt_a_dudt_hat = oe.contract('ij, btiju -> btiju', self.fwt, a_dudt_hat)
-        fwt_e_dudt_hat = oe.contract('ij, btiju -> btiju', self.fwt, e_dudt_hat)
-
-        residual_hat = fwt_a_dudt_hat - fwt_e_dudt_hat
-
-        return residual_hat
+        return self.calc_residual_loss(u)
 
 
 class NonlinearCDLoss:
@@ -183,72 +148,99 @@ class NonlinearCDLoss:
         self.fwt = torch.abs((fwt_lb ** -(1.0 / self.solver.nk)) ** -torch.sqrt(self.solver.kk / self.solver.ndim))
 
     @ValidateDimension(ndim=5)
-    def calc_gh(self, u: torch.Tensor, phi: torch.Tensor) -> torch.Tensor:
+    def _x_dot_nabla_y(self, x_hat: torch.Tensor, y_hat: torch.Tensor) -> torch.Tensor:
 
-        """Calculate g(u, \phi), h(u, \phi) for the nonlinear convection diffusion equations.
+        """Computes [x \cdot \nabla] y in the Fourier domain.
 
         Parameters
         ----------
-        u: torch.Tensor
-            Velocity field in the physical domain.
-        phi: torch.Tensor
-            Corruption field in the physical domain.
+        x_hat: torch.Tensor
+            Tensor, in the Fourier domain, to take the scalar product with nabla.
+        y_hat: torch.Tensor
+            Free-standing tensor in the Fourier domain.
 
         Returns
         -------
-        guphi_hat: torch.Tensor
-            g(u, \phi) in the Fourier domain.
-        huphi_hat: torch.Tensor
-            h(u, \phi) in the Fourier domain.
+        xdny: torch.Tensor
+            Computed [x \cdot \nabla] y in the Fourier domain.
         """
 
-        u = einops.rearrange(u, 'b t u i j -> b t i j u')
-        phi = einops.rearrange(phi, 'b t u i j -> b t i j u')
+        # TODO :: Add option to return y_dot_nabla_x as well
 
-        u_hat = self.solver.phys_to_fourier(u)
-        phi_hat = self.solver.phys_to_fourier(phi)
+        uij_aapt = []
+        for u_i in range(self.solver.ndim):
 
-        guphi_hat = self._g_u_phi(u_hat, phi_hat)
-        huphi_hat = self._h_u_phi(u_hat, phi_hat)
+            uj_aapt = []
+            for u_j in range(self.solver.ndim):
+                uj_aapt.append(self.solver.aap(x_hat[..., u_i], y_hat[..., u_j]))
 
-        guphi_hat = einops.rearrange(guphi_hat, 'b t i j u -> b t u i j')
-        huphi_hat = einops.rearrange(huphi_hat, 'b t i j u -> b t u i j')
+            uij_aapt.append(torch.stack(uj_aapt, dim=0))
 
-        return guphi_hat, huphi_hat
+        aapt = torch.stack(uij_aapt, dim=0)
+
+        xdny = oe.contract('...t, tu... -> ...u', self.solver.nabla, aapt)
+
+        return xdny
 
     @ValidateDimension(ndim=5)
-    def calc_g_u_phi(self, u: torch.Tensor, phi: torch.Tensor) -> torch.Tensor:
+    def _linear_residual(self, t_hat: torch.Tensor) -> torch.Tensor:
 
-        """Calculate g(u, \phi) for the nonlinear convection diffusion equations.
+        """Calculate the residual of t_hat in the Fourier domain.
 
         Parameters
         ----------
-        u: torch.Tensor
-            Velocity field in the physical domain.
-        phi: torch.Tensor
-            Corruption field in the physical domain.
+        t_hat: torch.Tensor
+            Tensor, t, in the Fourier domain.
 
         Returns
         -------
-        guphi_hat: torch.Tensor
-            g(u, \phi) in the Fourier domain.
+        residual: torch.Tensor
+            Residual of tensor, t, in the Fourier domain.
         """
 
-        u = einops.rearrange(u, 'b t u i j -> b t i j u')
-        phi = einops.rearrange(phi, 'b t u i j -> b t i j u')
+        # analytical derivative
+        a_dudt_hat = self.solver.dynamics(t_hat)
+        a_dudt_hat = a_dudt_hat[:, :-1, ...]
 
-        u_hat = self.solver.phys_to_fourier(u)
-        phi_hat = self.solver.phys_to_fourier(phi)
+        # empirical derivative
+        e_dudt_hat = (1.0 / self.dt) * (t_hat[:, 1:, ...] - t_hat[:, :-1, ...])
 
-        guphi_hat = self._g_u_phi(u_hat, phi_hat)
-        guphi_hat = einops.rearrange(guphi_hat, 'b t i j u -> b t u i j')
+        residual = a_dudt_hat - e_dudt_hat
 
-        return guphi_hat
+        return residual
+
+    @ValidateDimension(ndim=5)
+    def _nonlinear_residual(self, t_hat: torch.Tensor, p_hat: torch.Tensor) -> torch.Tensor:
+
+        """Computes a residual of the form: R(t + p) in the Fourier domain.
+
+        Parameters
+        ----------
+        t_hat: torch.Tensor
+            First tensor in non-linearity - must be in the Fourier domain.
+        p_hat: torch.Tensor
+            Second tensor in the non-linearity - must be in the Fourier domain.
+
+        Returns
+        -------
+        residual: torch.Tensor
+            Non-linear residual in the Fourier domain.
+        """
+
+        res_t = self._linear_residual(t_hat)
+        res_p = self._linear_residual(p_hat)
+
+        t_dot_nabla_p = self._x_dot_nabla_y(t_hat, p_hat)
+        p_dot_nabla_t = self._x_dot_nabla_y(p_hat, t_hat)
+
+        residual = res_t + res_p + t_dot_nabla_p + p_dot_nabla_t
+
+        return residual
 
     @ValidateDimension(ndim=5)
     def _g_u_phi(self, u_hat: torch.Tensor, phi_hat: torch.Tensor) -> torch.Tensor:
 
-        """Calculate g(u, \phi) for the nonlinear convection diffusion equations.
+        """Computes g(u, \phi) for the given problem in the Fourier domain.
 
         Parameters
         ----------
@@ -259,19 +251,47 @@ class NonlinearCDLoss:
 
         Returns
         -------
-        fwt_g_u_phi: torch.Tensor
-            g(u, \phi) in the Fourier domain.
+        guphi: torch.Tensor
+            Calculated g(u, \phi) in the Fourier domain.
         """
 
-        g_u_phi = self.solver.g_u_phi(u_hat, phi_hat, self.dt)
-        fwt_g_u_phi = oe.contract('ij, btiju -> btiju', self.fwt, g_u_phi)
+        res_u = self._linear_residual(u_hat)
 
-        return fwt_g_u_phi
+        u_dot_nabla_phi = self._x_dot_nabla_y(u_hat, phi_hat)
+        phi_dot_nabla_u = self._x_dot_nabla_y(phi_hat, u_hat)
+
+        guphi = res_u + u_dot_nabla_phi + phi_dot_nabla_u
+
+        return guphi
 
     @ValidateDimension(ndim=5)
-    def calc_h_u_phi(self, u: torch.Tensor, phi: torch.Tensor) -> torch.Tensor:
+    def calc_residual_loss(self, u: torch.Tensor) -> torch.Tensor:
 
-        """Calculate h(u, \phi) for the nonlinear convection diffusion equations.
+        """Calculate the L2 norm of a field, u, in the Fourier domain.
+
+        Parameters
+        ----------
+        u: torch.Tensor
+            Field in the physical domain.
+
+        Returns
+        -------
+        loss: torch.Tensor
+            L2 norm of the field, calculated in the Fourier domain.
+        """
+
+        u = einops.rearrange(u, 'b t u i j -> b t i j u')
+        u_hat = self.solver.phys_to_fourier(u)
+
+        res_u = self._linear_residual(u_hat)
+        loss = oe.contract('... -> ', res_u * torch.conj(res_u)) / res_u.numel()
+
+        return loss
+
+    @ValidateDimension(ndim=5)
+    def calc_g_loss(self, u: torch.Tensor, phi: torch.Tensor) -> torch.Tensor:
+
+        """Calculates the g-loss based on matching residuals.
 
         Parameters
         ----------
@@ -282,8 +302,8 @@ class NonlinearCDLoss:
 
         Returns
         -------
-        huphi_hat: torch.Tensor
-            h(u, \phi) in the Fourier domain.
+        loss: torch.Tensor
+            g-loss in the Fourier domain.
         """
 
         u = einops.rearrange(u, 'b t u i j -> b t i j u')
@@ -292,85 +312,11 @@ class NonlinearCDLoss:
         u_hat = self.solver.phys_to_fourier(u)
         phi_hat = self.solver.phys_to_fourier(phi)
 
-        huphi_hat = self._h_u_phi(u_hat, phi_hat, self.dt)
-        huphi_hat = einops.rearrange(huphi_hat, 'b t i j u -> b t u i j')
+        res_zeta = self._nonlinear_residual(u_hat, phi_hat)
+        res_phi = self._linear_residual(phi_hat)
+        res_guphi = self._g_u_phi(u_hat, phi_hat)
 
-        return huphi_hat
+        r_g = res_zeta - res_phi - res_guphi
+        loss = oe.contract('... -> ', r_g * torch.conj(r_g)) / r_g.numel()
 
-    @ValidateDimension(ndim=5)
-    def _h_u_phi(self, u_hat: torch.Tensor, phi_hat: torch.Tensor) -> torch.Tensor:
-
-        """Calculate h(u, \phi) for the nonlinear convection diffusion equations.
-
-        Parameters
-        ----------
-        u_hat: torch.Tensor
-            Velocity field in the Fourier domain.
-        phi_hat: torch.Tensor
-            Corruption field in the Fourier domain.
-
-        Returns
-        -------
-        fwt_h_u_phi: torch.Tensor
-            h(u, \phi) in the Fourier domain.
-        """
-
-        h_u_phi = self.solver.h_u_phi(u_hat, phi_hat, self.dt)
-        fwt_h_u_phi = oe.contract('ij, btiju -> btiju', self.fwt, h_u_phi)
-
-        return fwt_h_u_phi
-
-    @ValidateDimension(ndim=5)
-    def calc_residual(self, u: torch.Tensor) -> torch.Tensor:
-
-        """Calculate residual for the nonlinear convection diffusion equations.
-
-        Parameters
-        ----------
-        u: torch.Tensor
-            Velocity field in the physical domain.
-
-        Returns
-        -------
-        residual_hat: torch.Tensor
-            Residual in the Fourier domain.
-        """
-
-        u = einops.rearrange(u, 'b t u i j -> b t i j u')
-        u_hat = self.solver.phys_to_fourier(u)
-
-        residual_hat = self._residual(u_hat)
-        residual_hat = einops.rearrange(residual_hat, 'b t i j u -> b t u i j')
-
-        return residual_hat
-
-    @ValidateDimension(ndim=5)
-    def _residual(self, u_hat: torch.Tensor) -> torch.Tensor:
-
-        """Calculate residual for the nonlinear convection diffusion equations.
-
-        Parameters
-        ----------
-        u_hat: torch.Tensor
-            Velocity field in the Fourier domain.
-
-        Returns
-        -------
-        residual_hat: torch.Tensor
-            Residual in the Fourier domain.
-        """
-
-        # compute analytical derivatives
-        a_dudt_hat = self.solver.dynamics(u_hat).to(u_hat.dtype)
-        a_dudt_hat = a_dudt_hat[:, :-1, ...]
-
-        # compute empirical derivatives
-        e_dudt_hat = (1.0 / self.dt) * (u_hat[:, 1:, ...] - u_hat[:, :-1, ...])
-
-        # scale derivative fields
-        fwt_a_dudt_hat = oe.contract('ij, btiju -> btiju', self.fwt, a_dudt_hat)
-        fwt_e_dudt_hat = oe.contract('ij, btiju -> btiju', self.fwt, e_dudt_hat)
-
-        residual_hat = fwt_a_dudt_hat - fwt_e_dudt_hat
-
-        return residual_hat
+        return loss

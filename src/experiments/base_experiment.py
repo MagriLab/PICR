@@ -8,7 +8,6 @@ from typing import Union
 import numpy as np
 import torch
 import torch.nn as nn
-import opt_einsum as oe
 
 import wandb
 from torch.utils.data import DataLoader
@@ -137,29 +136,19 @@ def train(train_loader: DataLoader,
             phi_prediction = zeta - u_prediction
 
             # 01 :: Clean Velocity Field :: || R(\hat{u}) || = 0
-            r_zeta_phi_loss = piml_loss_fn.calc_residual(u_prediction)
-            r_zeta_phi_loss = oe.contract('... -> ', torch.abs(r_zeta_phi_loss) ** 2) / r_zeta_phi_loss.numel()
-
-            r_zeta_phi_loss *= config.LOSS_SCALING
+            r_u_loss = piml_loss_fn.calc_residual_loss(u_prediction)
 
             # 02 :: Residual Matching :: || R(u + \phi) - R(\hat{phi}) - g(\hat{u}, \hat{\phi}) || = 0
-            r_zeta = piml_loss_fn.calc_residual(zeta)
-            r_phi = piml_loss_fn.calc_residual(phi_prediction)
-            g_u_phi = piml_loss_fn.calc_g_u_phi(u_prediction, phi_prediction)
-
-            residual = r_zeta - r_phi
-            r_g_loss = oe.contract('... -> ', (torch.abs(residual) - torch.abs(g_u_phi)) ** 2) / residual.numel()
-
-            r_g_loss *= config.LOSS_SCALING
+            r_g_loss = piml_loss_fn.calc_g_loss(u_prediction, phi_prediction)
 
             # 03 :: Total Loss
-            total_loss = r_zeta_phi_loss + r_g_loss
+            total_loss = r_u_loss + r_g_loss
 
             # 04 :: Phi Loss -- Clean
             clean_loss = mse_loss_fn(phi, phi_prediction)
 
             # update batch losses
-            train_Ru_loss += r_zeta_phi_loss.item() * data.size(0)
+            train_Ru_loss += r_u_loss.item() * data.size(0)
             train_Rg_loss += r_g_loss.item() * data.size(0)
             train_total_loss += total_loss.item() * data.size(0)
             train_clean_loss += clean_loss.item() * data.size(0)
@@ -184,29 +173,19 @@ def train(train_loader: DataLoader,
             phi_prediction = zeta - u_prediction
 
             # 01 :: Clean Velocity Field :: || R(\hat{u}) || = 0
-            r_zeta_phi_loss = piml_loss_fn.calc_residual(u_prediction)
-            r_zeta_phi_loss = oe.contract('... -> ', torch.abs(r_zeta_phi_loss) ** 2) / r_zeta_phi_loss.numel()
-
-            r_zeta_phi_loss *= config.LOSS_SCALING
+            r_u_loss = piml_loss_fn.calc_residual_loss(u_prediction)
 
             # 02 :: Residual Matching :: || R(u + \phi) - R(\hat{phi}) - g(\hat{\u}, \hat{\phi}) || = 0
-            r_zeta = piml_loss_fn.calc_residual(zeta)
-            r_phi = piml_loss_fn.calc_residual(phi_prediction)
-            g_u_phi = piml_loss_fn.calc_g_u_phi(u_prediction, phi_prediction)
-
-            residual = r_zeta - r_phi
-            r_g_loss = oe.contract('... -> ', (torch.abs(residual) - torch.abs(g_u_phi)) ** 2) / residual.numel()
-
-            r_g_loss *= config.LOSS_SCALING
+            r_g_loss = piml_loss_fn.calc_g_loss(u_prediction, phi_prediction)
 
             # 03 :: Total Loss
-            total_loss = r_zeta_phi_loss + r_g_loss
+            total_loss = r_u_loss + r_g_loss
 
             # 04 :: Phi Loss -- Clean
             clean_loss = mse_loss_fn(phi, phi_prediction)
 
             # update batch losses
-            validation_Ru_loss += r_zeta_phi_loss.item() * data.size(0)
+            validation_Ru_loss += r_u_loss.item() * data.size(0)
             validation_Rg_loss += r_g_loss.item() * data.size(0)
             validation_total_loss += total_loss.item() * data.size(0)
             validation_clean_loss += clean_loss.item() * data.size(0)
