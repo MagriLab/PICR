@@ -3,26 +3,31 @@ import csv
 import sys
 from pathlib import Path
 from shutil import copyfile
-from typing import Union
+import functools as ft
+from typing import Any, Callable, Dict, Optional, Union
 
 import numpy as np
+import einops
+import opt_einsum as oe
+
 import torch
-import torch.nn as nn
+from torch import nn
+from torch.utils.data import DataLoader
 
 import wandb
-from torch.utils.data import DataLoader
 from wandb.sdk.lib import RunDisabled
 from wandb.wandb_run import Run
 
 sys.path.append('../..')
 from picr.model import Autoencoder
-from picr.loss import LinearCDLoss, NonlinearCDLoss
+from picr.loss import LinearCDLoss, NonlinearCDLoss, get_loss_fn
 
-from picr.corruption import ackley, rastrigin
+from picr.corruption import get_corruption_fn
 from picr.experiments.data import load_data, train_validation_split, generate_dataloader
 
 from picr.utils.config import ExperimentConfig
-from picr.utils.enums import eCorruption, eSolverFunction
+from picr.utils.enums import eCorruption
+from picr.utils.loss_tracker import LossTracker
 
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -33,23 +38,38 @@ DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 DEVICE_KWARGS = {'num_workers': 1, 'pin_memory': True} if DEVICE == 'cuda' else {}
 
 
-def train(train_loader: DataLoader,
-          validation_loader: DataLoader,
-          config: ExperimentConfig,
-          args: argparse.Namespace,
-          wandb_run: Union[Run, RunDisabled, None]) -> None:
+def initialise_csv(csv_path: Path) -> None:
 
-    # get phi function
-    if config.PHI_FN == eCorruption.ACKLEY:
-        phi_fn = ackley
-    elif config.PHI_FN == eCorruption.RASTRIGIN:
-        phi_fn = rastrigin
-    else:
-        raise ValueError('Incompatible corruption function...')
+    lt = LossTracker()
+    with open(csv_path, 'w+', newline='') as f_out:
+        writer = csv.writer(f_out, delimiter=',')
+        writer.writerow(['epoch', *lt.get_fields(training=True), *lt.get_fields(training=False)])
 
-    # define spatial grid for phi
-    x = torch.linspace(0.0, 2.0 * np.pi, config.NX)
-    xx = torch.stack(torch.meshgrid(x, x), dim=-1).to(DEVICE)
+
+def initialise_wandb(args: argparse.Namespace,
+                     config: Dict[str, Any],
+                     log_code: bool = True) -> Union[Run, RunDisabled, None]:
+
+    wandb_run = None
+    if args.wandb_entity:
+
+        # initialise W&B API
+        wandb_run = wandb.init(
+            config=config,
+            entity=args.wandb_entity,
+            project=args.wandb_project,
+            group=args.wandb_group,
+            name=str(args.experiment_path)
+        )
+
+    # log current code state to W&B
+    if log_code and isinstance(wandb_run, Run):
+        wandb_run.log_code(str(Path.cwd()))
+
+    return wandb_run
+
+
+def initialise_model(config: ExperimentConfig, model_path: Optional[Path] = None) -> nn.Module:
 
     # get activation function
     activation_fn = getattr(nn, config.ACTIVATION)()
@@ -66,219 +86,161 @@ def train(train_loader: DataLoader,
         batch_norm=config.BATCH_NORM
     )
 
-    if args.model_path:
-        model.load_state_dict(torch.load(args.model_path, map_location=DEVICE))
+    # load model from file if applicable.
+    if model_path:
+        model.load_state_dict(torch.load(model_path, map_location=DEVICE))
 
     model.to(DEVICE)
 
-    # define optimiser
-    optimizer = torch.optim.Adam(model.parameters(), lr=config.LR, weight_decay=config.L2)
+    return model
 
-    # define loss functions
-    mse_loss_fn = nn.MSELoss()
-    piml_loss_fn: Union[LinearCDLoss, NonlinearCDLoss]
 
-    if config.SOLVER_FN == eSolverFunction.LINEAR:
-        piml_loss_fn = LinearCDLoss(nk=config.NK, c=config.C, re=config.RE, dt=config.DT, fwt_lb=config.FWT_LB, device=DEVICE)
-    elif config.SOLVER_FN == eSolverFunction.NONLINEAR:
-        piml_loss_fn = NonlinearCDLoss(nk=config.NK, re=config.RE, dt=config.DT, fwt_lb=config.FWT_LB, device=DEVICE)
-    else:
-        raise ValueError('Incompatible Loss Type...')
+def set_corruption_fn(e_phi_fn: eCorruption,
+                      resolution: int,
+                      frequency: float,
+                      magnitude: float) -> Callable[[], torch.Tensor]:
 
-    # monitor gradients of the model
-    if isinstance(wandb_run, Run):
-        wandb_run.watch(models=model, criterion=mse_loss_fn)
+    x = torch.linspace(0.0, 2.0 * np.pi, resolution)
+    xx = torch.stack(torch.meshgrid(x, x), dim=-1).to(DEVICE)
 
-    # prepare results file
-    with open(args.experiment_path / 'results.csv', 'w+', newline='') as f_out:
-        writer = csv.writer(f_out, delimiter=',')
-        writer.writerow([
-            'epoch',
-            'train_Ru_loss',
-            'validation_Ru_loss',
-            'train_Rg_loss',
-            'validation_Rg_loss',
-            'train_total_loss',
-            'validation_total_loss',
-            'train_clean_loss',
-            'validation_clean_loss'
-        ])
+    # get corruption function
+    _phi_fn = get_corruption_fn(e_phi_fn)
+    phi_fn = ft.partial(_phi_fn, x=xx, freq=frequency, limit=magnitude)
 
-    # initialise minimum validation loss
-    min_validation_loss = np.Inf
+    return phi_fn
 
-    # iterate over N_EPOCHS
-    for epoch in range(config.N_EPOCHS):
 
-        # reset losses to zero
-        train_Ru_loss = 0.0
-        train_Rg_loss = 0.0
-        train_total_loss = 0.0
-        train_clean_loss = 0.0
+def get_boundaries(arr: torch.Tensor) -> torch.Tensor:
 
-        validation_Ru_loss = 0.0
-        validation_Rg_loss = 0.0
-        validation_total_loss = 0.0
-        validation_clean_loss = 0.0
+    _boundary_list = []
+    for b in range(-1, 0 + 1):
+        _idx1 = tuple([..., slice(None), b])
+        _idx2 = tuple([..., b, slice(None)])
 
-        model.train()
-        for batch_idx, data in enumerate(train_loader):
+        _boundary_list.extend([arr[_idx1], arr[_idx2]])
 
-            # conduct inference on the batch
-            data = data.to(DEVICE)
+    boundaries = torch.cat(_boundary_list, dim=-1)
 
-            # create corrupted data
-            phi = phi_fn(xx, freq=config.PHI_FREQ, limit=config.PHI_LIMIT)
-            zeta = data + phi
+    return boundaries
 
-            # predict phi
-            u_prediction = model(zeta)
-            phi_prediction = zeta - u_prediction
 
-            # 01 :: Clean Velocity Field :: || R(\hat{u}) || = 0
-            r_u_loss = piml_loss_fn.calc_residual_loss(u_prediction)
+def train_loop(model: nn.Module,
+               dataloader: DataLoader,
+               loss_fn: Union[LinearCDLoss, NonlinearCDLoss],
+               simulation_dt: float,
+               phi_fn: Callable[[], torch.Tensor],
+               optimizer: Optional[torch.optim.Optimizer] = None,
+               s_lambda: float = 1e3,
+               set_train: bool = False) -> LossTracker:
 
-            # 02 :: Residual Matching :: || R(u + \phi) - R(\hat{phi}) - g(\hat{u}, \hat{\phi}) || = 0
-            r_g_loss = piml_loss_fn.calc_g_loss(u_prediction, phi_prediction)
+    # reset losses to zero
+    batched_residual_loss = (0.0 + 0.0j)
+    batched_boundary_loss = (0.0 + 0.0j)
 
-            # 03 :: Total Loss
-            total_loss = r_u_loss + r_g_loss
+    batched_phi_dot_loss = (0.0 + 0.0j)
+    batched_phi_mean_loss = (0.0 + 0.0j)
 
-            # 04 :: Phi Loss -- Clean
-            clean_loss = mse_loss_fn(phi, phi_prediction)
+    batched_total_loss = (0.0 + 0.0j)
 
-            # update batch losses
-            train_Ru_loss += r_u_loss.item() * data.size(0)
-            train_Rg_loss += r_g_loss.item() * data.size(0)
-            train_total_loss += total_loss.item() * data.size(0)
-            train_clean_loss += clean_loss.item() * data.size(0)
+    batched_clean_u_loss = (0.0 + 0.0j)
+    batched_clean_phi_loss = (0.0 + 0.0j)
 
-            # update network
+    model.train(mode=set_train)
+    for batch_idx, data in enumerate(dataloader):
+
+        # conduct inference on the batch
+        data = data.to(DEVICE)
+
+        # create corrupted data
+        phi = phi_fn()
+        phi = einops.repeat(phi, 'i j -> b t u i j', b=data.size(0), t=data.size(1), u=data.size(2))
+        zeta = data + phi
+
+        # predict u, phi
+        u_prediction = model(zeta)
+        phi_prediction = zeta - u_prediction
+
+        # LOSS :: 01 :: Clean Velocity Field :: || R(\hat{u}) ||
+        r_u_loss = loss_fn.calc_residual_loss(u_prediction)
+
+        # LOSS :: 02 :: Boundary Loss :: || \hat{u_b} - u_b ||
+        u_boundaries = get_boundaries(data)
+        u_prediction_boundaries = get_boundaries(u_prediction)
+
+        boundary_loss = oe.contract('... -> ', (u_boundaries - u_prediction_boundaries) ** 2) / u_boundaries.numel()
+        boundary_loss *= s_lambda
+
+        # LOSS :: 03 :: Stationary Corruption :: || \partial_t \hat{\phi} ||
+        dphi_dt = (1.0 / simulation_dt) * (phi_prediction[:, 1:, ...] - phi_prediction[:, :-1, ...])
+        dphi_dt = oe.contract('... -> ', dphi_dt ** 2) / dphi_dt.numel()
+        dphi_dt *= s_lambda
+
+        # LOSS :: 04 :: Mean Corruption :: || \hat{\phi} - <\hat{\phi}> ||
+        r_phi = phi_prediction - einops.reduce(phi_prediction, 'b t u i j -> i j', torch.mean)
+        mean_phi_loss = oe.contract('... -> ', r_phi ** 2) / r_phi.numel()
+
+        mean_phi_loss *= s_lambda
+
+        # LOSS :: 05 :: Total Loss
+        total_loss = r_u_loss + boundary_loss + dphi_dt + mean_phi_loss
+
+        # LOSS :: 06 :: u, \phi -- Clean
+        clean_u_loss = torch.sqrt(torch.sum((data - u_prediction) ** 2) / torch.sum(data ** 2))
+        clean_phi_loss = torch.sqrt(torch.sum((phi - phi_prediction) ** 2) / torch.sum(phi ** 2))
+
+        # update batch losses
+        batched_residual_loss += r_u_loss.item() * data.size(0)
+        batched_boundary_loss += boundary_loss.item() * data.size(0)
+        batched_phi_dot_loss += dphi_dt.item() * data.size(0)
+        batched_phi_mean_loss += dphi_dt.item() * data.size(0)
+        batched_total_loss += total_loss.item() * data.size(0)
+        batched_clean_u_loss += clean_u_loss.item() * data.size(0)
+        batched_clean_phi_loss += clean_phi_loss.item() * data.size(0)
+
+        # update gradients
+        if set_train and optimizer:
             optimizer.zero_grad()
             total_loss.backward()
             optimizer.step()
 
-        model.eval()
-        for batch_idx, data in enumerate(validation_loader):
+    # normalise and find absolute value
+    batched_residual_loss = float(abs(batched_residual_loss)) / len(dataloader.dataset)
+    batched_boundary_loss = float(abs(batched_boundary_loss)) / len(dataloader.dataset)
+    batched_phi_dot_loss = float(abs(batched_phi_dot_loss)) / len(dataloader.dataset)
+    batched_phi_mean_loss = float(abs(batched_phi_mean_loss)) / len(dataloader.dataset)
+    batched_total_loss = float(abs(batched_total_loss)) / len(dataloader.dataset)
+    batched_clean_u_loss = float(abs(batched_clean_u_loss)) / len(dataloader.dataset)
+    batched_clean_phi_loss = float(abs(batched_clean_phi_loss)) / len(dataloader.dataset)
 
-            # conduct inference on the batch
-            data = data.to(DEVICE)
+    loss_dict: Dict[str, float] = {
+        'residual_loss': batched_residual_loss,
+        'boundary_loss': batched_boundary_loss,
+        'phi_dot_loss': batched_phi_dot_loss,
+        'phi_mean_loss': batched_phi_mean_loss,
+        'total_loss': batched_total_loss,
+        'clean_u_loss': batched_clean_u_loss,
+        'clean_phi_loss': batched_clean_phi_loss
+    }
 
-            # create corrupted data
-            phi = phi_fn(xx, freq=config.PHI_FREQ, limit=config.PHI_LIMIT)
-            zeta = data + phi
-
-            # predict phi
-            u_prediction = model(zeta)
-            phi_prediction = zeta - u_prediction
-
-            # 01 :: Clean Velocity Field :: || R(\hat{u}) || = 0
-            r_u_loss = piml_loss_fn.calc_residual_loss(u_prediction)
-
-            # 02 :: Residual Matching :: || R(u + \phi) - R(\hat{phi}) - g(\hat{\u}, \hat{\phi}) || = 0
-            r_g_loss = piml_loss_fn.calc_g_loss(u_prediction, phi_prediction)
-
-            # 03 :: Total Loss
-            total_loss = r_u_loss + r_g_loss
-
-            # 04 :: Phi Loss -- Clean
-            clean_loss = mse_loss_fn(phi, phi_prediction)
-
-            # update batch losses
-            validation_Ru_loss += r_u_loss.item() * data.size(0)
-            validation_Rg_loss += r_g_loss.item() * data.size(0)
-            validation_total_loss += total_loss.item() * data.size(0)
-            validation_clean_loss += clean_loss.item() * data.size(0)
-
-        # normalising batch losses
-        train_Ru_loss /= len(train_loader.dataset)
-        train_Rg_loss /= len(train_loader.dataset)
-        train_total_loss /= len(train_loader.dataset)
-        train_clean_loss /= len(train_loader.dataset)
-
-        validation_Ru_loss /= len(validation_loader.dataset)
-        validation_Rg_loss /= len(validation_loader.dataset)
-        validation_total_loss /= len(validation_loader.dataset)
-        validation_clean_loss /= len(validation_loader.dataset)
-
-        # checkpointing the model
-        if validation_total_loss < min_validation_loss:
-            min_validation_loss = validation_total_loss
-            torch.save(model.state_dict(), args.experiment_path / 'autoencoder.pt')
-
-        # logging results
-        log_dict = {
-            'train_Ru_loss': train_Ru_loss,
-            'validation_Ru_loss': validation_Ru_loss,
-            'train_Rg_loss': train_Rg_loss,
-            'validation_Rg_loss': validation_Rg_loss,
-            'train_total_loss': train_total_loss,
-            'validation_total_loss': validation_total_loss,
-            'train_clean_loss': train_clean_loss,
-            'validation_clean_loss': validation_clean_loss
-        }
-
-        # log results to W&B
-        if isinstance(wandb_run, Run):
-            wandb_run.log(data=log_dict)
-
-        # log results to sys.stdout
-        msg = f'Epoch: {epoch:05}'
-        for k, v in log_dict.items():
-            msg += f' | {k}: {v:011.5f}'
-        print(msg)
-
-        # log results to file
-        _results = [
-            epoch,
-            train_Ru_loss,
-            validation_Ru_loss,
-            train_Rg_loss,
-            validation_Rg_loss,
-            train_total_loss,
-            validation_total_loss,
-            train_clean_loss,
-            validation_clean_loss
-        ]
-
-        with open(args.experiment_path / 'results.csv', 'a', newline='') as f_out:
-            writer = csv.writer(f_out, delimiter=',')
-            writer.writerow(_results)
-
-        # upload results to W&B
-    if isinstance(wandb_run, Run):
-        artifact = wandb.Artifact(name=str(args.experiment_path).replace('/', '.'), type='dataset')
-        artifact.add_dir(local_path=str(args.experiment_path))
-
-        wandb_run.log_artifact(artifact_or_path=artifact)
+    return LossTracker(**loss_dict)
 
 
 def main(args: argparse.Namespace) -> None:
 
-    # load yaml configuration file for experiment
+    # load yaml configuration file
     config = ExperimentConfig()
     config.load_config(args.config_path)
 
-    # setup wandb api
-    wandb_run: Union[Run, RunDisabled, None] = None
-    if args.wandb_entity:
-
-        # initialise W&B API
-        wandb_run = wandb.init(
-            config=config.config,
-            entity=args.wandb_entity,
-            project=args.wandb_project,
-            group=args.wandb_group,
-            name=str(args.experiment_path)
-        )
-
-    # log current code state to W&B
-    if isinstance(wandb_run, Run):
-        wandb_run.log_code(str(Path.cwd()))
+    # initialise weights and biases
+    wandb_run = initialise_wandb(args, config.config, log_code=True)
 
     # setup the experiment path and copy config file
     args.experiment_path.mkdir(parents=True, exist_ok=False)
     copyfile(args.config_path, args.experiment_path / 'config.yml')
+
+    # initialise csv
+    csv_path = args.experiment_path / 'results.csv'
+    initialise_csv(csv_path)
 
     # load data
     u_all = load_data(h5_file=args.data_path, config=config)
@@ -287,10 +249,51 @@ def main(args: argparse.Namespace) -> None:
     train_loader = generate_dataloader(train_u, config.BATCH_SIZE, DEVICE_KWARGS)
     validation_loader = generate_dataloader(validation_u, config.BATCH_SIZE, DEVICE_KWARGS)
 
-    # run the training process
-    train(train_loader, validation_loader, config, args, wandb_run)
+    # get corruption function and loss function
+    phi_fn = set_corruption_fn(config.PHI_FN, config.NX, config.PHI_FREQ, config.PHI_LIMIT)
+    loss_fn = get_loss_fn(config, DEVICE)
 
-    print('DONE.')
+    # initialise model / optimizer
+    model = initialise_model(config, args.model_path)
+    optimizer = torch.optim.Adam(model.parameters(), lr=config.LR, weight_decay=config.L2)
+
+    # generate training functions
+    _loop_params = dict(model=model, loss_fn=loss_fn, simulation_dt=config.DT, phi_fn=phi_fn)
+
+    train_fn = ft.partial(train_loop, **_loop_params, dataloader=train_loader, optimizer=optimizer, set_train=True)
+    validation_fn = ft.partial(train_loop, **_loop_params, dataloader=validation_loader, set_train=False)
+
+    # training loop
+    min_validation_loss = np.Inf
+    for epoch in range(config.N_EPOCHS):
+
+        lt_training = train_fn()
+        lt_validation = validation_fn()
+
+        if abs(lt_validation.total_loss) < min_validation_loss:
+            min_validation_loss = abs(lt_validation.total_loss)
+            torch.save(model.state_dict(), args.experiment_path / 'autoencoder.pt')
+
+        # log results to weights and biases
+        if isinstance(wandb_run, Run):
+            wandb_log = {**lt_training.get_dict(training=True), **lt_validation.get_dict(training=False)}
+            wandb_run.log(data=wandb_log)
+
+        msg = f'Epoch: {epoch:05}'
+        for k, v in lt_training.get_dict(training=True).items():
+            msg += f' | {k}: {v:08.5e}'
+
+        _results = [epoch, *lt_training.get_values(), *lt_validation.get_values()]
+        with open(csv_path, 'a', newline='') as f_out:
+            writer = csv.writer(f_out, delimiter=',')
+            writer.writerow(_results)
+
+    # upload results to weights and biases
+    if isinstance(wandb_run, Run):
+        artifact = wandb.Artifact(name=str(args.experiment_path).replace('/', '.'), type='dataset')
+        artifact.add_dir(local_path=str(args.experiment_path))
+
+        wandb_run.log_artifact(artifact_or_path=artifact)
 
 
 if __name__ == '__main__':

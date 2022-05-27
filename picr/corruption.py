@@ -1,12 +1,39 @@
-from typing import TypeVar
+from typing import Callable
 
 import numpy as np
 import opt_einsum as oe
 import torch
 
 from .utils.checks import ValidateDimension
+from .utils.enums import eCorruption
+from .utils.types import T
 
-T = TypeVar('T', np.ndarray, torch.Tensor)
+
+def get_corruption_fn(e_corruption: eCorruption) -> Callable[[T, float, float], T]:
+
+    """Corruption Function Factory.
+
+    Parameters
+    ----------
+    e_corruption: eCorruption
+        Type of corruption function to return.
+
+    Returns
+    -------
+    Callable[[T, float, float], T]
+        Corruption function.
+    """
+
+    if e_corruption == eCorruption.ACKLEY:
+        return ackley
+
+    if e_corruption == eCorruption.RASTRIGIN:
+        return rastrigin
+
+    if e_corruption == eCorruption.POWER:
+        return power_fn
+
+    raise ValueError('Incompatible corruption function...')
 
 
 @ValidateDimension(ndim=3)
