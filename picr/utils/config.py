@@ -10,7 +10,8 @@ from .exceptions import SolverConsistencyError, SolverConsistencyWarning
 
 @dataclass
 class ExperimentConfig:
-    _config: Dict[str, Any] = field(default_factory=dict, repr=False)
+
+    _config: Dict[str, Any] = {}
 
     # data parameters
     NTRAIN: int = field(init=False)
@@ -56,7 +57,7 @@ class ExperimentConfig:
         """Load values from .yml file into class attributes."""
 
         # load yaml file to dictionary
-        with open(config_path, 'r') as f:
+        with open(config_path, 'r', encoding='utf8') as f:
             tmp_config = yaml.load(stream=f, Loader=yaml.CLoader)
 
         # assuming values are dictionaries
@@ -76,7 +77,7 @@ class ExperimentConfig:
             if k not in field_names:
                 raise ValueError(f'Invalid Field: {k} with value {v}')
 
-            k_field = next(filter(lambda x: x.name == k, fields(self)))
+            k_field = next(filter(lambda x, key=k: x.name == key, fields(self)))                          # type: ignore
             setattr(self, k, k_field.type(v))
 
             field_names.remove(k)
@@ -85,7 +86,7 @@ class ExperimentConfig:
 
             msg = 'Missing values in config file:\n'
             for fname in field_names:
-                _field = next(filter(lambda x: x.name == fname, fields(self)))
+                _field = next(filter(lambda x, key=fname: x.name == key, fields(self)))                   # type: ignore
                 msg += f'{_field.name}: {_field.type.__name__}\n'
 
             raise ValueError(msg)
@@ -102,4 +103,13 @@ class ExperimentConfig:
 
     @property
     def config(self) -> Dict[str, Any]:
+
+        """Returns the config dictionary.
+
+        Returns
+        -------
+        Dict[str, Any]
+            Config dictionary.
+        """
+
         return self._config

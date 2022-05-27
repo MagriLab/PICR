@@ -1,0 +1,25 @@
+[tool.mypy]
+python_version = 3.6
+warn_return_any = false
+warn_unused_configs = true
+ignore_missing_imports = true
+
+[tool.pylint.master]
+fail-under = 9.0
+
+[tool.pylint.design]
+max-line-length = 120
+min-public-methods = 1
+max-args = 10
+
+[tool.pylint.typecheck]
+ignored-modules = [
+  'torch'
+]
+
+[tool.pylint.message_control]
+disable = [
+  'missing-module-docstring',
+  'missing-class-docstring',
+  'invalid-name'
+]

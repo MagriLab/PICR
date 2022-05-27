@@ -47,10 +47,10 @@ class DimensionError(Exception):
         self.received = received
         self.msg = msg
 
-        if all([v is None for v in [self.expected, self.received, self.msg]]):
+        if all(v is None for v in [self.expected, self.received, self.msg]):
             raise ValueError('Must pass arguments to exception.')
 
-        if sum([v is not None for v in [self.expected, self.received]]) == 1:
+        if sum(v is not None for v in [self.expected, self.received]) == 1:
             raise ValueError('Must pass both expected and received.')
 
     def __str__(self) -> str:

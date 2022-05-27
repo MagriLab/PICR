@@ -1,7 +1,7 @@
 from typing import Any, Type
 
 import torch
-import torch.nn as nn
+from torch import nn
 
 from .utils.exceptions import DimensionError
 

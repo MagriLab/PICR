@@ -150,7 +150,7 @@ class NonlinearCDLoss:
     @ValidateDimension(ndim=5)
     def _x_dot_nabla_y(self, x_hat: torch.Tensor, y_hat: torch.Tensor) -> torch.Tensor:
 
-        """Computes [x \cdot \nabla] y in the Fourier domain.
+        r"""Computes [x \cdot \nabla] y in the Fourier domain.
 
         Parameters
         ----------
@@ -164,8 +164,6 @@ class NonlinearCDLoss:
         xdny: torch.Tensor
             Computed [x \cdot \nabla] y in the Fourier domain.
         """
-
-        # TODO :: Add option to return y_dot_nabla_x as well
 
         uij_aapt = []
         for u_i in range(self.solver.ndim):
@@ -240,7 +238,7 @@ class NonlinearCDLoss:
     @ValidateDimension(ndim=5)
     def _g_u_phi(self, u_hat: torch.Tensor, phi_hat: torch.Tensor) -> torch.Tensor:
 
-        """Computes g(u, \phi) for the given problem in the Fourier domain.
+        r"""Computes g(u, \phi) for the given problem in the Fourier domain.
 
         Parameters
         ----------

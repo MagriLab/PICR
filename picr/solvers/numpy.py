@@ -65,7 +65,7 @@ class LinearCDS(KolSol):
     @staticmethod
     def g_u_phi(u_hat: np.ndarray, phi_hat: np.ndarray) -> np.ndarray:
 
-        """Calculate g(u, \phi) for the linear convection diffusion equations.
+        r"""Calculate g(u, \phi) for the linear convection diffusion equations.
 
         Parameters
         ----------
@@ -140,13 +140,13 @@ class NonlinearCDS(KolSol):
         u_dot_nabla_u = oe.contract('...t, ut... -> ...u', self.nabla, aapt)
         laplace_u = self.nu * oe.contract('..., ...u -> ...u', self.kk, u_hat)
 
-        dudt = -u_dot_nabla_u - laplace_u
+        dudt = -1.0 * u_dot_nabla_u - laplace_u
 
         return dudt
 
     def g_u_phi(self, u_hat: np.ndarray, phi_hat: np.ndarray, dt: float) -> np.ndarray:
 
-        """Calculate g(u, \phi) for the nonlinear convection diffusion equations.
+        r"""Calculate g(u, \phi) for the nonlinear convection diffusion equations.
 
         Parameters
         ----------

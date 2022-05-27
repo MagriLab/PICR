@@ -40,7 +40,7 @@ class ValidateDimension:
 
             arg_chain = it.chain(args, kwargs.values())
             if not any(map(lambda _arg: isinstance(_arg, TypeTensor.__args__), arg_chain)):               # type: ignore
-                raise DimensionWarning(f'No arguments with dimensions to check')
+                raise DimensionWarning('No arguments with dimensions to check')
 
             for arg in arg_chain:
                 if isinstance(arg, TypeTensor.__args__) and not len(arg.shape) == self.ndim:              # type: ignore
