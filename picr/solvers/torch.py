@@ -4,8 +4,6 @@ import opt_einsum as oe
 import torch
 from kolsol.torch.solver import KolSol
 
-from ..utils.exceptions import DimensionError
-
 
 class LinearCDS(KolSol):
 
@@ -126,6 +124,6 @@ class NonlinearCDS(KolSol):
         u_dot_nabla_u = oe.contract('...t, ut... -> ...u', self.nabla, aapt)
         laplace_u = self.nu * oe.contract('..., ...u -> ...u', self.kk, u_hat)
 
-        dudt = -u_dot_nabla_u - laplace_u
+        dudt = -1.0 * u_dot_nabla_u - laplace_u
 
         return dudt

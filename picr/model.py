@@ -1,7 +1,7 @@
-from typing import List, Union
+from typing import List, NoReturn, Union
 
 import torch
-import torch.nn as nn
+from torch import nn
 
 from .layers import (
     Crop,
@@ -72,6 +72,9 @@ class BaseEncoderDecoder(nn.Module):
 
         # variable to store operation layers
         self.module_layers: Union[nn.Module, None] = None
+
+    def forward(self, x: torch.Tensor) -> NoReturn:
+        raise ValueError('Need to implement a sub-class.')
 
 
 class Autoencoder(BaseEncoderDecoder):
@@ -328,7 +331,9 @@ class UpsamplingDecoder(BaseEncoderDecoder):
             if self.dropout > 0.0:
                 linear_layers.append(nn.Dropout(self.dropout, inplace=True))
 
-            linear_layers.append(nn.Unflatten(dim=2, unflattened_size=(self.dims[-1], self.prelatent_nx, self.prelatent_nx)))
+            linear_layers.append(
+                nn.Unflatten(dim=2, unflattened_size=(self.dims[-1], self.prelatent_nx, self.prelatent_nx))
+            )
 
         # produce sequential operation for the module layers
         self.module_layers: nn.Module = nn.Sequential(*linear_layers, *decoder_layers)
@@ -432,7 +437,9 @@ class TransposeDecoder(BaseEncoderDecoder):
             if self.dropout > 0.0:
                 linear_layers.append(nn.Dropout(self.dropout, inplace=True))
 
-            linear_layers.append(nn.Unflatten(dim=2, unflattened_size=(self.dims[-1], self.prelatent_nx, self.prelatent_nx)))
+            linear_layers.append(
+                nn.Unflatten(dim=2, unflattened_size=(self.dims[-1], self.prelatent_nx, self.prelatent_nx))
+            )
 
         # produce sequential operation for the module layers
         self.module_layers: nn.Module = nn.Sequential(*linear_layers, *decoder_layers)
