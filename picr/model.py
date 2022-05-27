@@ -74,6 +74,15 @@ class BaseEncoderDecoder(nn.Module):
         self.module_layers: Union[nn.Module, None] = None
 
     def forward(self, x: torch.Tensor) -> NoReturn:
+
+        """Forward pass through the model.
+
+        Parameters
+        ----------
+        x: torch.Tensor
+            Tensor to pass through the model.s
+        """
+
         raise ValueError('Need to implement a sub-class.')
 
 
