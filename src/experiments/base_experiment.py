@@ -1,20 +1,18 @@
 import argparse
 import csv
+import functools as ft
 import sys
 from pathlib import Path
 from shutil import copyfile
-import functools as ft
 from typing import Any, Callable, Dict, Optional, Union
 
-import numpy as np
 import einops
+import numpy as np
 import opt_einsum as oe
-
 import torch
+import wandb
 from torch import nn
 from torch.utils.data import DataLoader
-
-import wandb
 from wandb.sdk.lib import RunDisabled
 from wandb.wandb_run import Run
 
@@ -90,6 +88,7 @@ def initialise_model(config: ExperimentConfig, model_path: Optional[Path] = None
     if model_path:
         model.load_state_dict(torch.load(model_path, map_location=DEVICE))
 
+    model.to(torch.double)
     model.to(DEVICE)
 
     return model
@@ -270,8 +269,8 @@ def main(args: argparse.Namespace) -> None:
         lt_training = train_fn()
         lt_validation = validation_fn()
 
-        if abs(lt_validation.total_loss) < min_validation_loss:
-            min_validation_loss = abs(lt_validation.total_loss)
+        if lt_validation.total_loss < min_validation_loss:
+            min_validation_loss = lt_validation.total_loss
             torch.save(model.state_dict(), args.experiment_path / 'autoencoder.pt')
 
         # log results to weights and biases
@@ -282,6 +281,9 @@ def main(args: argparse.Namespace) -> None:
         msg = f'Epoch: {epoch:05}'
         for k, v in lt_training.get_dict(training=True).items():
             msg += f' | {k}: {v:08.5e}'
+
+        if epoch % 5 == 0:
+            print(msg)
 
         _results = [epoch, *lt_training.get_values(), *lt_validation.get_values()]
         with open(csv_path, 'a', newline='') as f_out:

@@ -11,7 +11,8 @@ from .exceptions import SolverConsistencyError, SolverConsistencyWarning
 @dataclass
 class ExperimentConfig:
 
-    _config: Dict[str, Any] = {}
+    # _config: Dict[str, Any] = {}
+    _config: Dict[str, Any] = field(default_factory=dict, repr=False)
 
     # data parameters
     NTRAIN: int = field(init=False)
