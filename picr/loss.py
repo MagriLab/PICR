@@ -10,17 +10,96 @@ from .utils.enums import eSolverFunction
 from .utils.config import ExperimentConfig
 
 
-class LinearCDLoss:
+class BaseLoss:
 
-    def __init__(self,
-                 nk: int,
-                 c: float,
-                 re: float,
-                 dt: float,
-                 fwt_lb: float = 1.0,
-                 device: Union[torch.device, str] = torch.device('cpu')) -> None:
+    solver: Union[LinearCDS, NonlinearCDS]
 
-        """Calculate Losses for Linear Convection-Diffusion Problem.
+    def __init__(self, dt: float, fwt_lb: float) -> None:
+
+        """Base class for the Physics-Informed Loss.
+
+        Parameters
+        ----------
+        dt: float
+            Length of the time-step
+        fwt_lb: float
+            Fourier weighting term - lower bound.
+        """
+
+        self.dt = dt
+        self.fwt_lb = fwt_lb
+
+    @property
+    def fwt(self) -> torch.Tensor:
+
+        """Fourier weighting term.
+
+        Returns
+        -------
+        torch.Tensor
+            The Fourier weighting term, given the lower-bound.
+        """
+
+        return torch.abs((self.fwt_lb ** -(1.0 / self.solver.nk)) ** -torch.sqrt(self.solver.kk / self.solver.ndim))
+
+    @ValidateDimension(ndim=5)
+    def _residual(self, t_hat: torch.Tensor) -> torch.Tensor:
+
+        """Calculate the residual of t_hat in the Fourier domain.
+
+        Parameters
+        ----------
+        t_hat: torch.Tensor
+            Tensor, t, in the Fourier domain.
+
+        Returns
+        -------
+        residual: torch.Tensor
+            Residual of tensor, t, in the Fourier domain.
+        """
+
+        # analytical derivative
+        a_dudt_hat = self.solver.dynamics(t_hat)
+        a_dudt_hat = a_dudt_hat[:, :-1, ...]
+
+        # empirical derivative
+        e_dudt_hat = (1.0 / self.dt) * (t_hat[:, 1:, ...] - t_hat[:, :-1, ...])
+
+        residual = a_dudt_hat - e_dudt_hat
+        residual = oe.contract('ij, btiju -> btiju', self.fwt, residual)
+
+        return residual
+
+    @ValidateDimension(ndim=5)
+    def calc_residual_loss(self, u: torch.Tensor) -> torch.Tensor:
+
+        """Calculate the L2 norm of a field, u, in the Fourier domain.
+
+        Parameters
+        ----------
+        u: torch.Tensor
+            Field in the physical domain.
+
+        Returns
+        -------
+        loss: torch.Tensor
+            L2 norm of the field, calculated in the Fourier domain.
+        """
+
+        u = einops.rearrange(u, 'b t u i j -> b t i j u')
+        u_hat = self.solver.phys_to_fourier(u)
+
+        res_u = self._residual(u_hat)
+        loss = oe.contract('... -> ', res_u * torch.conj(res_u)) / res_u.numel()
+
+        return loss
+
+
+class LinearCDLoss(BaseLoss):
+
+    def __init__(self, nk: int, c: float, re: float, dt: float, fwt_lb: float, device: torch.device) -> None:
+
+        """Linear Convection-Diffusion Loss.
 
         Parameters
         ----------
@@ -34,78 +113,19 @@ class LinearCDLoss:
             Length of the time-step.
         fwt_lb: float
             Fourier weighting term - lower bound.
-        device: Union[torch.device, str]
+        device: torch.device
             Device on which to initialise the tensors.
         """
 
+        super().__init__(dt=dt, fwt_lb=fwt_lb)
         self.solver = LinearCDS(nk=nk, c=c, re=re, ndim=2, device=device)
-        self.dt = dt
-
-        self.fwt = torch.abs((fwt_lb ** -(1.0 / self.solver.nk)) ** -torch.sqrt(self.solver.kk / self.solver.ndim))
-
-    @ValidateDimension(ndim=5)
-    def _residual(self, t_hat: torch.Tensor) -> torch.Tensor:
-
-        """Calculate the residual of t_hat in the Fourier domain.
-
-        Parameters
-        ----------
-        t_hat: torch.Tensor
-            Tensor, t, in the Fourier domain.
-
-        Returns
-        -------
-        residual: torch.Tensor
-            Residual of tensor, t, in the Fourier domain.
-        """
-
-        # analytical derivative
-        a_dudt_hat = self.solver.dynamics(t_hat)
-        a_dudt_hat = a_dudt_hat[:, :-1, ...]
-
-        # empirical derivative
-        e_dudt_hat = (1.0 / self.dt) * (t_hat[:, 1:, ...] - t_hat[:, :-1, ...])
-
-        residual = a_dudt_hat - e_dudt_hat
-        residual = oe.contract('ij, btiju -> btiju', self.fwt, residual)
-
-        return residual
-
-    @ValidateDimension(ndim=5)
-    def calc_residual_loss(self, u: torch.Tensor) -> torch.Tensor:
-
-        """Calculate the L2 norm of a field, u, in the Fourier domain.
-
-        Parameters
-        ----------
-        u: torch.Tensor
-            Field in the physical domain.
-
-        Returns
-        -------
-        loss: torch.Tensor
-            L2 norm of the field, calculated in the Fourier domain.
-        """
-
-        u = einops.rearrange(u, 'b t u i j -> b t i j u')
-        u_hat = self.solver.phys_to_fourier(u)
-
-        res_u = self._residual(u_hat)
-        loss = oe.contract('... -> ', res_u * torch.conj(res_u)) / res_u.numel()
-
-        return loss
 
 
-class NonlinearCDLoss:
+class NonlinearCDLoss(BaseLoss):
 
-    def __init__(self,
-                 nk: int,
-                 re: float,
-                 dt: float,
-                 fwt_lb: float = 1.0,
-                 device: Union[torch.device, str] = torch.device('cpu')) -> None:
+    def __init__(self, nk: int, re: float, dt: float, fwt_lb: float, device: torch.device) -> None:
 
-        """Calculate Losses for Nonlinear Convection-Diffusion Problem.
+        """Non-linear Convection-Diffusion Loss.
 
         Parameters
         ----------
@@ -114,69 +134,15 @@ class NonlinearCDLoss:
         re: float
             Reynolds number of the flow.
         dt: float
-            Size of time-step.
+            Length of the time-step.
         fwt_lb: float
             Fourier weighting term - lower bound.
-        device: Union[torch.device, str]
+        device: torch.device
             Device on which to initialise the tensors.
         """
 
+        super().__init__(dt=dt, fwt_lb=fwt_lb)
         self.solver = NonlinearCDS(nk=nk, re=re, ndim=2, device=device)
-        self.dt = dt
-
-        self.fwt = torch.abs((fwt_lb ** -(1.0 / self.solver.nk)) ** -torch.sqrt(self.solver.kk / self.solver.ndim))
-
-    @ValidateDimension(ndim=5)
-    def _residual(self, t_hat: torch.Tensor) -> torch.Tensor:
-
-        """Calculate the residual of t_hat in the Fourier domain.
-
-        Parameters
-        ----------
-        t_hat: torch.Tensor
-            Tensor, t, in the Fourier domain.
-
-        Returns
-        -------
-        residual: torch.Tensor
-            Residual of tensor, t, in the Fourier domain.
-        """
-
-        # analytical derivative
-        a_dudt_hat = self.solver.dynamics(t_hat)
-        a_dudt_hat = a_dudt_hat[:, :-1, ...]
-
-        # empirical derivative
-        e_dudt_hat = (1.0 / self.dt) * (t_hat[:, 1:, ...] - t_hat[:, :-1, ...])
-
-        residual = a_dudt_hat - e_dudt_hat
-        residual = oe.contract('ij, btiju -> btiju', self.fwt, residual)
-
-        return residual
-
-    @ValidateDimension(ndim=5)
-    def calc_residual_loss(self, u: torch.Tensor) -> torch.Tensor:
-
-        """Calculate the L2 norm of a field, u, in the Fourier domain.
-
-        Parameters
-        ----------
-        u: torch.Tensor
-            Field in the physical domain.
-
-        Returns
-        -------
-        loss: torch.Tensor
-            L2 norm of the field, calculated in the Fourier domain.
-        """
-
-        u = einops.rearrange(u, 'b t u i j -> b t i j u')
-        u_hat = self.solver.phys_to_fourier(u)
-
-        res_u = self._residual(u_hat)
-        loss = oe.contract('... -> ', res_u * torch.conj(res_u)) / res_u.numel()
-
-        return loss
 
 
 def get_loss_fn(config: ExperimentConfig, device: torch.device) -> Union[LinearCDLoss, NonlinearCDLoss]:
