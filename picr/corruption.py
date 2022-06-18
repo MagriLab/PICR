@@ -1,4 +1,6 @@
+from modulefinder import Module
 from typing import Callable
+from types import ModuleType
 
 import numpy as np
 import opt_einsum as oe
@@ -56,6 +58,7 @@ def ackley(x: T, freq: float, limit: float = 1.0) -> T:
         Ackley function on given grid.
     """
 
+    lib: ModuleType
     if isinstance(x, np.ndarray):
         lib = np
     elif isinstance(x, torch.Tensor):
@@ -93,6 +96,7 @@ def rastrigin(x: T, freq: float, limit: float = 1.0) -> T:
         Rastrigin function on given grid.
     """
 
+    lib: ModuleType
     if isinstance(x, np.ndarray):
         lib = np
     elif isinstance(x, torch.Tensor):
@@ -126,6 +130,7 @@ def power_fn(x: T, freq: float = 0.0, limit: float = 1.0) -> T:
         sphere function on given grid.
     """
 
+    lib: ModuleType
     if isinstance(x, np.ndarray):
         lib = np
     elif isinstance(x, torch.Tensor):

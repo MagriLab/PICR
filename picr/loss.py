@@ -5,6 +5,7 @@ import opt_einsum as oe
 import torch
 
 from .solvers.torch import LinearCDS, NonlinearCDS
+from .solvers.proto import Solver
 from .utils.checks import ValidateDimension
 from .utils.enums import eSolverFunction
 from .utils.config import ExperimentConfig
@@ -12,7 +13,7 @@ from .utils.config import ExperimentConfig
 
 class BaseLoss:
 
-    solver: Union[LinearCDS, NonlinearCDS]
+    solver: Solver
 
     def __init__(self, dt: float, fwt_lb: float) -> None:
 

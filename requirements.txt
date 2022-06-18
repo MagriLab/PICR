@@ -10,8 +10,6 @@ matplotlib
 
 git+https://github.com/MagriLab/KolSol@main
 
-types-PyYAML
-
 mypy==0.931
 pylint
 
