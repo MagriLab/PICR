@@ -57,9 +57,9 @@ def load_data(h5_file: Path, config: ExperimentConfig) -> torch.Tensor:
     u_all = np.stack(list_u, axis=1)
 
     u_all = einops.rearrange(u_all, 'b t i j u -> b t u i j')
-    u_all = torch.from_numpy(u_all).to(torch.double)
+    u_tensor_all = torch.from_numpy(u_all).to(torch.double)
 
-    return u_all
+    return u_tensor_all
 
 
 def generate_random_idx(data: torch.Tensor, n_points: int, step: int) -> np.ndarray:
@@ -121,7 +121,7 @@ def train_validation_split(data: torch.Tensor,
 
     # choose n_train + n_validation random indices from the dataset without replacement
     n_points = n_train + n_validation
-    idx = generate_random_idx(data, n_points, step=step)
+    idx = torch.Tensor(generate_random_idx(data, n_points, step=step))
 
     # split data into train / validation
     d_train, d_validation = torch.split(data[idx], [n_train, n_validation])

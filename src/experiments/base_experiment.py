@@ -97,7 +97,7 @@ def initialise_model(config: ExperimentConfig, model_path: Optional[Path] = None
 def set_corruption_fn(e_phi_fn: eCorruption,
                       resolution: int,
                       frequency: float,
-                      magnitude: float) -> Callable[[], torch.Tensor]:
+                      magnitude: float) -> ft.partial:
 
     x = torch.linspace(0.0, 2.0 * np.pi, resolution)
     xx = torch.stack(torch.meshgrid(x, x), dim=-1).to(DEVICE)
@@ -203,13 +203,13 @@ def train_loop(model: nn.Module,
             optimizer.step()
 
     # normalise and find absolute value
-    batched_residual_loss = float(abs(batched_residual_loss)) / len(dataloader.dataset)
-    batched_boundary_loss = float(abs(batched_boundary_loss)) / len(dataloader.dataset)
-    batched_phi_dot_loss = float(abs(batched_phi_dot_loss)) / len(dataloader.dataset)
-    batched_phi_mean_loss = float(abs(batched_phi_mean_loss)) / len(dataloader.dataset)
-    batched_total_loss = float(abs(batched_total_loss)) / len(dataloader.dataset)
-    batched_clean_u_loss = float(abs(batched_clean_u_loss)) / len(dataloader.dataset)
-    batched_clean_phi_loss = float(abs(batched_clean_phi_loss)) / len(dataloader.dataset)
+    batched_residual_loss = float(abs(batched_residual_loss)) / len(dataloader.dataset)                   # type: ignore
+    batched_boundary_loss = float(abs(batched_boundary_loss)) / len(dataloader.dataset)                   # type: ignore
+    batched_phi_dot_loss = float(abs(batched_phi_dot_loss)) / len(dataloader.dataset)                     # type: ignore
+    batched_phi_mean_loss = float(abs(batched_phi_mean_loss)) / len(dataloader.dataset)                   # type: ignore
+    batched_total_loss = float(abs(batched_total_loss)) / len(dataloader.dataset)                         # type: ignore
+    batched_clean_u_loss = float(abs(batched_clean_u_loss)) / len(dataloader.dataset)                     # type: ignore
+    batched_clean_phi_loss = float(abs(batched_clean_phi_loss)) / len(dataloader.dataset)                 # type: ignore
 
     loss_dict: Dict[str, float] = {
         'residual_loss': batched_residual_loss,
@@ -226,6 +226,22 @@ def train_loop(model: nn.Module,
 
 def main(args: argparse.Namespace) -> None:
 
+    global DEVICE
+    global DEVICE_KWARGS
+
+    if args.run_gpu >= 0 and args.run_gpu < torch.cuda.device_count():
+
+        if torch.cuda.is_available():
+            DEVICE = torch.device(f'cuda:{args.run_gpu}')
+            DEVICE_KWARGS = {'num_workers': 1, 'pin_memory': True}
+        else:
+            raise ValueError('Specified CUDA device unavailable.')
+
+    if args.memory_fraction:
+
+        print(f'Setting mf={args.memory_fraction} on device: {DEVICE}')
+        torch.cuda.set_per_process_memory_fraction(args.memory_fraction, DEVICE)
+    
     # load yaml configuration file
     config = ExperimentConfig()
     config.load_config(args.config_path)
@@ -234,7 +250,7 @@ def main(args: argparse.Namespace) -> None:
     wandb_run = initialise_wandb(args, config.config, log_code=True)
 
     # setup the experiment path and copy config file
-    args.experiment_path.mkdir(parents=True, exist_ok=False)
+    args.experiment_path.mkdir(parents=True, exist_ok=True)
     copyfile(args.config_path, args.experiment_path / 'config.yml')
 
     # initialise csv
@@ -242,7 +258,7 @@ def main(args: argparse.Namespace) -> None:
     initialise_csv(csv_path)
 
     # load data
-    u_all = load_data(h5_file=args.data_path, config=config)
+    u_all = load_data(h5_file=args.data_path, config=config).to(torch.float)
     train_u, validation_u = train_validation_split(u_all, config.NTRAIN, config.NVALIDATION, step=config.TIME_STACK)
 
     train_loader = generate_dataloader(train_u, config.BATCH_SIZE, DEVICE_KWARGS)
@@ -254,6 +270,8 @@ def main(args: argparse.Namespace) -> None:
 
     # initialise model / optimizer
     model = initialise_model(config, args.model_path)
+    model.to(torch.float)
+
     optimizer = torch.optim.Adam(model.parameters(), lr=config.LR, weight_decay=config.L2)
 
     # generate training functions
@@ -310,6 +328,12 @@ if __name__ == '__main__':
 
     # argument to define optional path to load pre-trained model
     parser.add_argument('-mp', '--model-path', type=Path, required=False)
+
+    parser.add_argument('-gpu', '--run-gpu', type=int, required=False)
+    parser.add_argument('-mf', '--memory-fraction', type=float, required=False)
+
+    parser.add_argument('-gpu', '--run-gpu', type=int, required=False)
+    parser.add_argument('-mf', '--memory-fraction', type=float, required=False)
 
     # arguments to define wandb parameters
     parser.add_argument('--wandb-entity', default=None, type=str)
