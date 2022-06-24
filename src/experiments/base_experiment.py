@@ -1,10 +1,12 @@
 import argparse
 import csv
 import functools as ft
+
 import sys
 from pathlib import Path
 from shutil import copyfile
-from typing import Any, Callable, Dict, Optional, Union
+from typing import Callable, Dict, NamedTuple, Optional, Union
+import PIL
 
 import einops
 import numpy as np
@@ -18,7 +20,7 @@ from wandb.wandb_run import Run
 
 sys.path.append('../..')
 from picr.model import Autoencoder
-from picr.loss import LinearCDLoss, NonlinearCDLoss, get_loss_fn
+from picr.loss import get_loss_fn, PILoss
 
 from picr.corruption import get_corruption_fn
 from picr.experiments.data import load_data, train_validation_split, generate_dataloader
@@ -36,7 +38,22 @@ DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 DEVICE_KWARGS = {'num_workers': 1, 'pin_memory': True} if DEVICE == 'cuda' else {}
 
 
+class WandbConfig(NamedTuple):
+
+    entity: Optional[str]
+    project: Optional[str]
+    group: Optional[str]
+
+
 def initialise_csv(csv_path: Path) -> None:
+
+    """Initialise the results .csv file.
+
+    Parameters
+    ----------
+    csv_path: Path
+        Path for the .csv file to create and write header to.
+    """
 
     lt = LossTracker()
     with open(csv_path, 'w+', newline='') as f_out:
@@ -44,20 +61,35 @@ def initialise_csv(csv_path: Path) -> None:
         writer.writerow(['epoch', *lt.get_fields(training=True), *lt.get_fields(training=False)])
 
 
-def initialise_wandb(args: argparse.Namespace,
-                     config: Dict[str, Any],
-                     log_code: bool = True) -> Union[Run, RunDisabled, None]:
+def initialise_wandb(wandb_config: WandbConfig,
+                     config: ExperimentConfig,
+                     experiment_path: Path,
+                     log_code: bool) -> Union[Run, RunDisabled, None]:
+
+    """Initialise the Weights and Biases API.
+
+    Parameters
+    ----------
+    wandb_config: WandbConfig
+        Arguments for Weights and Biases.
+    config: ExperimentConfig
+        Configuration used to run the experiment.
+    experiment_path: Path
+        Path for the experiment -- location of code to copy
+    log_code: bool
+        Whether to save a copy of the code to Weights and Biases.
+    """
 
     wandb_run = None
-    if args.wandb_entity:
+    if wandb_config.entity:
 
         # initialise W&B API
         wandb_run = wandb.init(
-            config=config,
-            entity=args.wandb_entity,
-            project=args.wandb_project,
-            group=args.wandb_group,
-            name=str(args.experiment_path)
+            config=config.config,
+            entity=wandb_config.entity,
+            project=wandb_config.project,
+            group=wandb_config.group,
+            name=str(experiment_path)
         )
 
     # log current code state to W&B
@@ -68,6 +100,21 @@ def initialise_wandb(args: argparse.Namespace,
 
 
 def initialise_model(config: ExperimentConfig, model_path: Optional[Path] = None) -> nn.Module:
+
+    """Iniitalise CNN Model for experiment.
+
+    Parameters
+    ----------
+    config: ExperimentConfig
+        Parameters to use for the experiment.
+    model_path: Optional[Path]
+        Optional model to load.
+
+    Returns
+    -------
+    model: nn.Module
+        Initialised model.
+    """
 
     # get activation function
     activation_fn = getattr(nn, config.ACTIVATION)()
@@ -99,6 +146,25 @@ def set_corruption_fn(e_phi_fn: eCorruption,
                       frequency: float,
                       magnitude: float) -> ft.partial:
 
+    """Generate partial corruption function with given parameters.
+
+    Parameters
+    ----------
+    e_phi_fn: eCorruption
+        Type of corruption function to generate.
+    resulution: int
+        Resolution of the field to generate from the corruption function.
+    frequency: float
+        Parameterised frequency for the corruption function.
+    magnitude: float
+        Parameterised magnitude for the corruption function.
+
+    Returns
+    -------
+    phi_fn: ft.partial
+        Generated partial corruption function.
+    """
+
     x = torch.linspace(0.0, 2.0 * np.pi, resolution)
     xx = torch.stack(torch.meshgrid(x, x), dim=-1).to(DEVICE)
 
@@ -110,6 +176,16 @@ def set_corruption_fn(e_phi_fn: eCorruption,
 
 
 def get_boundaries(arr: torch.Tensor) -> torch.Tensor:
+
+    """Retrieve boundaries of the given tensor.
+
+    Note :: This assumes an input of a two-dimensional field.
+
+    Parameters
+    ----------
+    arr: torch.Tensor
+        Tensor to extract the boundaries from.
+    """
 
     _boundary_list = []
     for b in range(-1, 0 + 1):
@@ -125,12 +201,39 @@ def get_boundaries(arr: torch.Tensor) -> torch.Tensor:
 
 def train_loop(model: nn.Module,
                dataloader: DataLoader,
-               loss_fn: Union[LinearCDLoss, NonlinearCDLoss],
+               loss_fn: PILoss,
                simulation_dt: float,
                phi_fn: Callable[[], torch.Tensor],
                optimizer: Optional[torch.optim.Optimizer] = None,
                s_lambda: float = 1e3,
                set_train: bool = False) -> LossTracker:
+
+    """Run a single training / evaluation loop.
+
+    Parameters
+    ----------
+    model: nn.Module
+        Model to use for evaluation.
+    dataloader: DataLoader
+        Generator to retrieve data for evaluation from.
+    loss_fn: PILoss
+        Loss function for calculating physics-informed aspect of the loss.
+    simulation_dt: float
+        Size of the time-step used in the simulation data.
+    phi_fn: ft.partial
+        Function used to generate the required corruption field.
+    optimizer: Optional[torch.optim.Optimizer]
+        Optimiser used to update the weights of the model, when applicable.
+    s_lambda: float
+        Scaling parameter for the loss.
+    set_train: bool
+        Determine whether run in training / evaluation mode.
+
+    Returns
+    -------
+    LossTracker
+        Loss tracking object to hold information about the training progress.    
+    """
 
     # reset losses to zero
     batched_residual_loss = (0.0 + 0.0j)
@@ -145,7 +248,7 @@ def train_loop(model: nn.Module,
     batched_clean_phi_loss = (0.0 + 0.0j)
 
     model.train(mode=set_train)
-    for batch_idx, data in enumerate(dataloader):
+    for data in dataloader:
 
         # conduct inference on the batch
         data = data.to(DEVICE)
@@ -226,28 +329,35 @@ def train_loop(model: nn.Module,
 
 def main(args: argparse.Namespace) -> None:
 
-    global DEVICE
-    global DEVICE_KWARGS
+    """Run the Experiment.
+
+    Parameters
+    ----------
+    args: argparse.Namespace
+        Command-line arguments to dictate experiment run.
+    """
 
     if args.run_gpu >= 0 and args.run_gpu < torch.cuda.device_count():
 
-        if torch.cuda.is_available():
-            DEVICE = torch.device(f'cuda:{args.run_gpu}')
-            DEVICE_KWARGS = {'num_workers': 1, 'pin_memory': True}
-        else:
+        global DEVICE
+        global DEVICE_KWARGS
+
+        if not torch.cuda.is_available():
             raise ValueError('Specified CUDA device unavailable.')
 
-    if args.memory_fraction:
+        DEVICE = torch.device(f'cuda:{args.run_gpu}')
+        DEVICE_KWARGS = {'num_workers': 1, 'pin_memory': True}
 
-        print(f'Setting mf={args.memory_fraction} on device: {DEVICE}')
+    if args.memory_fraction:
         torch.cuda.set_per_process_memory_fraction(args.memory_fraction, DEVICE)
-    
+
     # load yaml configuration file
     config = ExperimentConfig()
     config.load_config(args.config_path)
 
     # initialise weights and biases
-    wandb_run = initialise_wandb(args, config.config, log_code=True)
+    wandb_config = WandbConfig(entity=args.wandb_entity, project=args.wandb_project, group=args.wandb_group)
+    wandb_run = initialise_wandb(wandb_config, config, args.experiment_path, log_code=True)
 
     # setup the experiment path and copy config file
     args.experiment_path.mkdir(parents=True, exist_ok=True)
@@ -258,11 +368,11 @@ def main(args: argparse.Namespace) -> None:
     initialise_csv(csv_path)
 
     # load data
-    u_all = load_data(h5_file=args.data_path, config=config).to(torch.float)
+    u_all: torch.Tensor = load_data(h5_file=args.data_path, config=config).to(torch.float)
     train_u, validation_u = train_validation_split(u_all, config.NTRAIN, config.NVALIDATION, step=config.TIME_STACK)
 
-    train_loader = generate_dataloader(train_u, config.BATCH_SIZE, DEVICE_KWARGS)
-    validation_loader = generate_dataloader(validation_u, config.BATCH_SIZE, DEVICE_KWARGS)
+    train_loader: DataLoader = generate_dataloader(train_u, config.BATCH_SIZE, DEVICE_KWARGS)
+    validation_loader: DataLoader = generate_dataloader(validation_u, config.BATCH_SIZE, DEVICE_KWARGS)
 
     # get corruption function and loss function
     phi_fn = set_corruption_fn(config.PHI_FN, config.NX, config.PHI_FREQ, config.PHI_LIMIT)
@@ -280,13 +390,14 @@ def main(args: argparse.Namespace) -> None:
     train_fn = ft.partial(train_loop, **_loop_params, dataloader=train_loader, optimizer=optimizer, set_train=True)
     validation_fn = ft.partial(train_loop, **_loop_params, dataloader=validation_loader, set_train=False)
 
-    # training loop
+    # main training loop
     min_validation_loss = np.Inf
     for epoch in range(config.N_EPOCHS):
 
-        lt_training = train_fn()
-        lt_validation = validation_fn()
+        lt_training: LossTracker = train_fn()
+        lt_validation: LossTracker = validation_fn()
 
+        # update global validation loss if model improves
         if lt_validation.total_loss < min_validation_loss:
             min_validation_loss = lt_validation.total_loss
             torch.save(model.state_dict(), args.experiment_path / 'autoencoder.pt')
@@ -296,13 +407,15 @@ def main(args: argparse.Namespace) -> None:
             wandb_log = {**lt_training.get_dict(training=True), **lt_validation.get_dict(training=False)}
             wandb_run.log(data=wandb_log)
 
+        # print update to stdout
         msg = f'Epoch: {epoch:05}'
         for k, v in lt_training.get_dict(training=True).items():
             msg += f' | {k}: {v:08.5e}'
 
-        if epoch % 5 == 0:
+        if epoch % args.log_freq == 0:
             print(msg)
 
+        # write new results to .csv file
         _results = [epoch, *lt_training.get_values(), *lt_validation.get_values()]
         with open(csv_path, 'a', newline='') as f_out:
             writer = csv.writer(f_out, delimiter=',')
@@ -334,6 +447,8 @@ if __name__ == '__main__':
 
     parser.add_argument('-gpu', '--run-gpu', type=int, required=False)
     parser.add_argument('-mf', '--memory-fraction', type=float, required=False)
+
+    parser.add_argument('-lf', '--log-freq', type=int, required=False, default=5)
 
     # arguments to define wandb parameters
     parser.add_argument('--wandb-entity', default=None, type=str)
