@@ -1,13 +1,14 @@
-import time
 import argparse
-import subprocess
+from pathlib import Path
 from typing import Any, Dict, NamedTuple, Optional
 
-import yaml
-from pathlib import Path
+import time
+import subprocess
 
-import torch
 from multiprocessing import Pool, Queue
+
+import yaml
+import torch
 
 
 queue: Queue = Queue()
@@ -28,31 +29,31 @@ class WandbConfig(NamedTuple):
 
 class Job:
 
-  def __init__(self, config_path: Path, data_path: Path, experiment_path: Path, wandb_config: WandbConfig) -> None:
+    def __init__(self, config_path: Path, data_path: Path, experiment_path: Path, wandb_config: WandbConfig) -> None:
 
-    """Object to hold job-specific information.
+        """Object to hold job-specific information.
 
-    Parameters
-    ----------
-    config_path: Path
-        Path to the config file used to run the experiment.
-    data_path: Path
-        Path to the location of the simulation data.
-    experiment_path: Path
-        Path to save experiment run to.
-    wandb_config: WandbConfig
-        Named tuple containing relevant information for the W&B interface.
-    """
+        Parameters
+        ----------
+        config_path: Path
+            Path to the config file used to run the experiment.
+        data_path: Path
+            Path to the location of the simulation data.
+        experiment_path: Path
+            Path to save experiment run to.
+        wandb_config: WandbConfig
+            Named tuple containing relevant information for the W&B interface.
+        """
 
-    self.config_path = config_path
-    self.data_path = data_path
+        self.config_path = config_path
+        self.data_path = data_path
 
-    self.experiment_path = experiment_path
-    self.wandb_config = wandb_config
+        self.experiment_path = experiment_path
+        self.wandb_config = wandb_config
 
-  def __str__(self) -> str:
-      msg = f'Job({self.experiment_path})'
-      return msg
+    def __str__(self) -> str:
+        msg = f'Job({self.experiment_path})'
+        return msg
 
 
 def generate_config(config_path: Path, freq: float) -> None:
@@ -117,7 +118,6 @@ def generate_config(config_path: Path, freq: float) -> None:
         yaml.dump(config, f)
 
 
-
 def run_job(job: Job) -> None:
 
     """Runs a single job on the next available GPU.
@@ -158,7 +158,7 @@ def run_job(job: Job) -> None:
         job.experiment_path.mkdir(parents=True, exist_ok=False)
 
         with open(stdout_path, 'w+') as out, open(stderr_path, 'w+') as err:
-          _ = subprocess.run(subprocess_args, stdout=out, stderr=err)
+            _ = subprocess.run(subprocess_args, stdout=out, stderr=err)
 
         print(f'{job} finished')
 
@@ -193,7 +193,6 @@ def main(args: argparse.Namespace) -> None:
         generate_config(config_path, freq)
 
         for idx_run in range(args.n_samples):
-            
             experiment_path = args.base_experiment_path / f'FREQ{int(freq):02}' / f'{idx_run:03}'
             job_list.append(Job(config_path, args.data_path, experiment_path, wandb_config))
 

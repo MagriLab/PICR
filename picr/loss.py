@@ -1,4 +1,4 @@
-from typing import Union
+from typing import Protocol
 
 import einops
 import opt_einsum as oe
@@ -9,6 +9,41 @@ from .solvers.proto import Solver
 from .utils.checks import ValidateDimension
 from .utils.enums import eSolverFunction
 from .utils.config import ExperimentConfig
+
+
+class PILoss(Protocol):
+
+    solver: Solver
+
+    def _residual(self, t_hat: torch.Tensor) -> torch.Tensor:
+
+        """Calculate physics-based residual from the Fourier field.
+
+        Parameters
+        ----------
+        t_hat: torch.Tensor
+            Tensor field to calculate residual of.
+
+        Returns
+        -------
+        torch.Tensor
+            Residual of the input field.
+        """
+
+    def calc_residual_loss(self, u: torch.Tensor) -> torch.Tensor:
+
+        """Calculate residual loss for physical field.
+
+        Parameters
+        ----------
+        u: torch.Tensor
+            Field to calculate residual loss for.
+
+        Returns
+        -------
+        torch.Tensor
+            Residual of the input field.
+        """
 
 
 class BaseLoss:
@@ -146,7 +181,7 @@ class NonlinearCDLoss(BaseLoss):
         self.solver = NonlinearCDS(nk=nk, re=re, ndim=2, device=device)
 
 
-def get_loss_fn(config: ExperimentConfig, device: torch.device) -> Union[LinearCDLoss, NonlinearCDLoss]:
+def get_loss_fn(config: ExperimentConfig, device: torch.device) -> PILoss:
 
     """Get the relevant loss function.
 
@@ -159,12 +194,13 @@ def get_loss_fn(config: ExperimentConfig, device: torch.device) -> Union[LinearC
 
     Returns
     -------
-    Union[LinearCDLoss, NonlinearCDLoss]
+    PILoss
         Generated loss function.
     """
 
     if config.SOLVER_FN == eSolverFunction.LINEAR:
         return LinearCDLoss(nk=config.NK, c=config.C, re=config.RE, dt=config.DT, fwt_lb=config.FWT_LB, device=device)
+
     if config.SOLVER_FN == eSolverFunction.NONLINEAR:
         return NonlinearCDLoss(nk=config.NK, re=config.RE, dt=config.DT, fwt_lb=config.FWT_LB, device=device)
 
