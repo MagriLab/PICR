@@ -25,5 +25,6 @@ disable = [
   'invalid-name',
   'unspecified-encoding',
   'wrong-import-position',
-  'global-statement'
+  'global-statement',
+  'cell-var-from-loop'
 ]
