@@ -354,6 +354,9 @@ def main(args: argparse.Namespace) -> None:
     config = ExperimentConfig()
     config.load_config(args.config_path)
 
+    if not (isinstance(config.PHI_FREQ, float) and isinstance(config.PHI_LIMIT, float)):
+        raise ValueError('PHI_FREQ, PHI_LIMIT must be float for this experiment run.')
+
     # initialise weights and biases
     wandb_config = WandbConfig(entity=args.wandb_entity, project=args.wandb_project, group=args.wandb_group)
     wandb_run = initialise_wandb(wandb_config, config, args.experiment_path, log_code=True)

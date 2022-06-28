@@ -1,6 +1,7 @@
 import argparse
+from cmath import exp
 from pathlib import Path
-from typing import Any, Dict, NamedTuple, Optional
+from typing import List, NamedTuple, Optional
 
 import time
 import subprocess
@@ -12,8 +13,6 @@ import torch
 
 
 queue: Queue = Queue()
-
-FREQUENCIES = [1.0, 3.0, 5.0, 7.0, 9.0]
 
 NUM_GPUS = torch.cuda.device_count()
 PROC_PER_GPU = 15
@@ -56,7 +55,7 @@ class Job:
         return msg
 
 
-def generate_config(config_path: Path, freq: float) -> None:
+def generate_config(experiment_config_path: Path, derived_config_path: Path, freq: float) -> None:
 
     """Generate config file for experiment.
 
@@ -69,52 +68,16 @@ def generate_config(config_path: Path, freq: float) -> None:
     """
 
     # make config directory if it doesn't exist
-    config_path.parent.mkdir(parents=True, exist_ok=True)
+    derived_config_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # open experiment config
+    with open(experiment_config_path, 'r', encoding='utf8') as f:
+       config = yaml.load(stream=f, Loader=yaml.CLoader)
 
-    config: Dict[str, Dict[str, Any]] = {}
-
-    # config :: data_constraints
-    config['DATA_PARAMETERS'] = {}
-    config['DATA_PARAMETERS']['NTRAIN'] = 1000
-    config['DATA_PARAMETERS']['NVALIDATION'] = 500
-    config['DATA_PARAMETERS']['TIME_STACK'] = 2
-
-    # config :: ml_constraints
-    config['ML_PARAMETERS'] = {}
-
-    config['ML_PARAMETERS']['N_EPOCHS'] = 50
-    config['ML_PARAMETERS']['BATCH_SIZE'] = 64
-    config['ML_PARAMETERS']['LAYERS'] = [32, 64, 128]
-    config['ML_PARAMETERS']['LATENT_DIM'] = 0
-    config['ML_PARAMETERS']['ACTIVATION'] = 'Tanh'
-    config['ML_PARAMETERS']['LR'] = 0.0003
-    config['ML_PARAMETERS']['L2'] = 0.0
-    config['ML_PARAMETERS']['DROPOUT'] = 0.0
-    config['ML_PARAMETERS']['BATCH_NORM'] = False
-    config['ML_PARAMETERS']['DECODER'] = 'UPSAMPLING'
-
-    # config :: simulation_constants
-    config['SIMULATION_PARAMETERS'] = {}
-    config['SIMULATION_PARAMETERS']['SOLVER_FN'] = 'NONLINEAR'
-    config['SIMULATION_PARAMETERS']['NK'] = 8
-    config['SIMULATION_PARAMETERS']['DT'] = 0.001
-    config['SIMULATION_PARAMETERS']['C'] = 0.0
-    config['SIMULATION_PARAMETERS']['RE'] = 500.0
-    config['SIMULATION_PARAMETERS']['NX'] = 64
-    config['SIMULATION_PARAMETERS']['NU'] = 2
-
-    # config :: corruption_parameters
-    config['CORRUPTION_PARAMETERS'] = {}
-    config['CORRUPTION_PARAMETERS']['PHI_FN'] = 'RASTRIGIN'
+    # override frequency and write derived config
     config['CORRUPTION_PARAMETERS']['PHI_FREQ'] = freq
-    config['CORRUPTION_PARAMETERS']['PHI_LIMIT'] = 0.1
 
-    # config :: corruption_parameters
-    config['LOSS_PARAMETERS'] = {}
-    config['LOSS_PARAMETERS']['FWT_LB'] = 1.0
-    config['LOSS_PARAMETERS']['LOSS_SCALING'] = 10000
-
-    with open(config_path, 'w+') as f:
+    with open(derived_config_path, 'w+') as f:
         yaml.dump(config, f)
 
 
@@ -149,7 +112,7 @@ def run_job(job: Job) -> None:
         subprocess_args = list(map(str, subprocess_args))
 
         # add wandb options to args
-        for k in filter(lambda _k: wandb_dict[_k], wandb_dict := job.wandb_config._asdict()):                # type: str
+        for k in filter(lambda _k: wandb_dict[_k], wandb_dict := job.wandb_config._asdict()):             # type: ignore
             subprocess_args.extend([f'--wandb-{k}', wandb_dict[k]])
 
         stdout_path = job.experiment_path / 'stdout.log'
@@ -158,12 +121,38 @@ def run_job(job: Job) -> None:
         job.experiment_path.mkdir(parents=True, exist_ok=False)
 
         with open(stdout_path, 'w+') as out, open(stderr_path, 'w+') as err:
-            _ = subprocess.run(subprocess_args, stdout=out, stderr=err)
+            _ = subprocess.run(subprocess_args, stdout=out, stderr=err, check=False)
 
         print(f'{job} finished')
 
     finally:
         queue.put(gpu_id)
+
+
+def get_frequencies(experiment_config_path: Path) -> List[float]:
+
+    """Extract frequencies from experiment config.
+
+    Parameters
+    ----------
+    experiment_config_path: Path
+        Path to config file to dictate frequency experiments.
+
+    Returns
+    -------
+    frequencies: List[float]
+        List of all the frequencies to run for the experiment.
+    """
+
+    with open(experiment_config_path, 'r', encoding='utf8') as f:
+        experiment_config = yaml.load(stream=f, Loader=yaml.CLoader)
+
+    frequencies = experiment_config['CORRUPTION_PARAMETERS']['PHI_FREQ']
+
+    if not isinstance(frequencies, list):
+        raise ValueError('Must provide a list of PHI_FREQ.')
+
+    return frequencies
 
 
 def main(args: argparse.Namespace) -> None:
@@ -186,19 +175,18 @@ def main(args: argparse.Namespace) -> None:
         for _ in range(PROC_PER_GPU):
             queue.put(gpu_ids)
 
+    # get frequencies to test
+    frequencies = get_frequencies(args.experiment_config_path)
+
     job_list = []
-    for freq in FREQUENCIES:
+    for freq in frequencies:
 
         config_path = base_config_path / f'config_f{int(freq)}.yml'
-        generate_config(config_path, freq)
+        generate_config(experiment_config_path=args.experiment_config_path, derived_config_path=config_path, freq=freq)
 
         for idx_run in range(args.n_samples):
             experiment_path = args.base_experiment_path / f'FREQ{int(freq):02}' / f'{idx_run:03}'
             job_list.append(Job(config_path, args.data_path, experiment_path, wandb_config))
-
-
-    for job in job_list:
-        print(job)
 
     pool = Pool(processes=PROC_PER_GPU * NUM_GPUS)
     pool.map(run_job, job_list)
@@ -218,6 +206,7 @@ if __name__ == '__main__':
     parser.add_argument('-ns', '--n-samples', type=int, required=True)
 
     # arguments to define paths
+    parser.add_argument('-ecp', '--experiment-config-path', type=Path, required=True)
     parser.add_argument('-bep', '--base-experiment-path', type=Path, required=True)
     parser.add_argument('-dp', '--data-path', type=Path, required=True)
 

@@ -1,8 +1,8 @@
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List, Union
 
-import yaml
 from dataclasses import dataclass, field, fields
+import yaml
 
 from .enums import eCorruption, eDecoder, eSolverFunction
 from .exceptions import SolverConsistencyError, SolverConsistencyWarning
@@ -46,12 +46,11 @@ class ExperimentConfig:
 
     # corruption parameters
     PHI_FN: eCorruption = field(init=False)
-    PHI_FREQ: float = field(init=False)
-    PHI_LIMIT: float = field(init=False)
+    PHI_FREQ: Union[float, List[float]] = field(init=False)
+    PHI_LIMIT: Union[float, List[float]] = field(init=False)
 
     # loss parameters
     FWT_LB: float = field(init=False)
-    LOSS_SCALING: float = field(init=False)
 
     def load_config(self, config_path: Path) -> None:
 
