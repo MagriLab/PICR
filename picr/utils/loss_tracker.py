@@ -48,7 +48,8 @@ class LossTracker:
 
         return list(map(lambda x: self._prepend_str(x.name, training), filter(lambda x: x.repr, fields(self))))
 
-    def get_values(self) -> List[float]:
+    @property
+    def get_loss_keys(self) -> List[float]:
 
         """Get loss values.
 

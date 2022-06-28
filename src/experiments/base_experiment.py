@@ -432,7 +432,7 @@ def main(args: argparse.Namespace) -> None:
             print(msg)
 
         # write new results to .csv file
-        _results = [epoch, *lt_training.get_values(), *lt_validation.get_values()]
+        _results = [epoch, *lt_training.get_loss_keys, *lt_validation.get_loss_keys]
         with open(csv_path, 'a', newline='') as f_out:
             writer = csv.writer(f_out, delimiter=',')
             writer.writerow(_results)
