@@ -9,6 +9,7 @@ class eDecoder(enum.Enum):
 class eSolverFunction(enum.Enum):
     LINEAR = 'LINEAR'
     NONLINEAR = 'NONLINEAR'
+    KOLMOGOROV = 'KOLMOGOROV'
 
 
 class eCorruption(enum.Enum):

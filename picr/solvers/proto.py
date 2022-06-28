@@ -10,6 +10,7 @@ class Solver(Protocol[T]):
 
     nk: int
     kk: T
+    nabla: T
 
     ndim: int
 
