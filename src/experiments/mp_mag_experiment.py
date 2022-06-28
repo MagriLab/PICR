@@ -7,8 +7,8 @@ import subprocess
 
 from multiprocessing import Pool, Queue
 
-import yaml
 import torch
+import yaml
 
 
 queue: Queue = Queue()
@@ -54,7 +54,7 @@ class Job:
         return msg
 
 
-def generate_config(experiment_config_path: Path, derived_config_path: Path, freq: float) -> None:
+def generate_config(experiment_config_path: Path, derived_config_path: Path, mag: float) -> None:
 
     """Generate config file for experiment.
 
@@ -62,8 +62,8 @@ def generate_config(experiment_config_path: Path, derived_config_path: Path, fre
     ----------
     config_path: Path
         Path to save the config file to.
-    freq: float
-        Frequency used to generate the config file.
+    mag: float
+        Magnitude used to generate the config file.
     """
 
     # make config directory if it doesn't exist
@@ -74,7 +74,7 @@ def generate_config(experiment_config_path: Path, derived_config_path: Path, fre
         config = yaml.load(stream=f, Loader=yaml.CLoader)
 
     # override frequency and write derived config
-    config['CORRUPTION_PARAMETERS']['PHI_FREQ'] = freq
+    config['CORRUPTION_PARAMETERS']['PHI_LIMIT'] = mag
 
     with open(derived_config_path, 'w+') as f:
         yaml.dump(config, f)
@@ -128,7 +128,7 @@ def run_job(job: Job) -> None:
         queue.put(gpu_id)
 
 
-def get_frequencies(experiment_config_path: Path) -> List[float]:
+def get_magnitudes(experiment_config_path: Path) -> List[float]:
 
     """Extract frequencies from experiment config.
 
@@ -139,19 +139,19 @@ def get_frequencies(experiment_config_path: Path) -> List[float]:
 
     Returns
     -------
-    frequencies: List[float]
+    magnitudes: List[float]
         List of all the frequencies to run for the experiment.
     """
 
     with open(experiment_config_path, 'r', encoding='utf8') as f:
         experiment_config = yaml.load(stream=f, Loader=yaml.CLoader)
 
-    frequencies = experiment_config['CORRUPTION_PARAMETERS']['PHI_FREQ']
+    magnitudes = experiment_config['CORRUPTION_PARAMETERS']['PHI_LIMIT']
 
-    if not isinstance(frequencies, list):
-        raise ValueError('Must provide a list of PHI_FREQ.')
+    if not isinstance(magnitudes, list):
+        raise ValueError('Must provide a list of PHI_LIMIT.')
 
-    return frequencies
+    return magnitudes
 
 
 def main(args: argparse.Namespace) -> None:
@@ -175,16 +175,16 @@ def main(args: argparse.Namespace) -> None:
             queue.put(gpu_ids)
 
     # get frequencies to test
-    frequencies = get_frequencies(args.experiment_config_path)
+    magnitudes = get_magnitudes(args.experiment_config_path)
 
     job_list = []
-    for freq in frequencies:
+    for mag in magnitudes:
 
-        config_path = base_config_path / f'config_f{int(freq)}.yml'
-        generate_config(experiment_config_path=args.experiment_config_path, derived_config_path=config_path, freq=freq)
+        config_path = base_config_path / f'config_f{int(mag)}.yml'
+        generate_config(experiment_config_path=args.experiment_config_path, derived_config_path=config_path, mag=mag)
 
         for idx_run in range(args.n_samples):
-            experiment_path = args.base_experiment_path / f'FREQ{int(freq):02}' / f'{idx_run:03}'
+            experiment_path = args.base_experiment_path / f'FREQ{int(mag):02}' / f'{idx_run:03}'
             job_list.append(Job(config_path, args.data_path, experiment_path, wandb_config))
 
     with Pool(processes=PROC_PER_GPU * NUM_GPUS) as pool:
