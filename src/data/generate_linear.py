@@ -52,6 +52,14 @@ def write_h5(path: Path, data: Dict[str, Any]) -> None:
 
 def main(args: argparse.Namespace) -> None:
 
+    """Generate Linear Convection-Diffusion Data.
+
+    Parameters
+    ----------
+    args: argparse.Namespace
+        Command line arguments.
+    """
+
     print('00 :: Initialising Linear Convection-Diffusion Solver.')
 
     setup_directory(args.data_path)

@@ -9,9 +9,8 @@ from .exceptions import SolverConsistencyError, SolverConsistencyWarning
 
 
 @dataclass
-class ExperimentConfig:
+class ExperimentConfig:                                                   # pylint: disable=too-many-instance-attributes
 
-    # _config: Dict[str, Any] = {}
     _config: Dict[str, Any] = field(default_factory=dict, repr=False)
 
     # data parameters

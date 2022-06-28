@@ -4,6 +4,8 @@ import einops
 import opt_einsum as oe
 import torch
 
+from kolsol.torch.solver import KolSol
+
 from .solvers.torch import LinearCDS, NonlinearCDS
 from .solvers.proto import Solver
 from .utils.checks import ValidateDimension
@@ -14,6 +16,7 @@ from .utils.config import ExperimentConfig
 class PILoss(Protocol):
 
     solver: Solver
+    constraints: bool
 
     def _residual(self, t_hat: torch.Tensor) -> torch.Tensor:
 
@@ -22,12 +25,12 @@ class PILoss(Protocol):
         Parameters
         ----------
         t_hat: torch.Tensor
-            Tensor field to calculate residual of.
+            Tensor field to calculate residual of, in the Fourier domain.
 
         Returns
         -------
         torch.Tensor
-            Residual of the input field.
+            Residual of the input field, computed in the Fourier domain.
         """
 
     def calc_residual_loss(self, u: torch.Tensor) -> torch.Tensor:
@@ -37,7 +40,7 @@ class PILoss(Protocol):
         Parameters
         ----------
         u: torch.Tensor
-            Field to calculate residual loss for.
+            Field to calculate residual loss for, in the physical domain.
 
         Returns
         -------
@@ -45,10 +48,42 @@ class PILoss(Protocol):
             Residual of the input field.
         """
 
+    def _constraint(self, t_hat: torch.Tensor) -> torch.Tensor:
+
+        """Calculate the constraint on t_hat in the Fourier domain.
+
+        Parameters
+        ----------
+        t_hat: torch.Tensor
+            Tensor field to calculate constraint for, in the Fourier domain.
+
+        Returns
+        -------
+        torch.Tensor
+            Constraint of the input field, in the Fourier domain.
+        """
+
+    def calc_constraint_loss(self, u: torch.Tensor) -> torch.Tensor:
+
+        """Calculate the constraint loss for a field, u.
+
+        Parameters
+        ----------
+        u: torch.Tensor
+            Field to calculate the constraint for, in the physical domain.
+
+        Raises
+        ------
+        torch.Tensor
+            Constraint of the input field.
+        """
+
+
 
 class BaseLoss:
 
     solver: Solver
+    constraints: bool
 
     def __init__(self, dt: float, fwt_lb: float) -> None:
 
@@ -130,8 +165,46 @@ class BaseLoss:
 
         return loss
 
+    @ValidateDimension(ndim=5)
+    def _constraint(self, t_hat: torch.Tensor) -> torch.Tensor:
 
-class LinearCDLoss(BaseLoss):
+        """Calculate the constraint on t_hat in the Fourier domain.
+
+        Parameters
+        ----------
+        t_hat: torch.Tensor
+            Tensor, t, in the Fourier domain.
+
+        Raises
+        ------
+        NotImplementedError
+            Raises as this method needs to be overwritten before used.
+        """
+
+        raise NotImplementedError('BaseLoss:_constraint()')
+
+    @ValidateDimension(ndim=5)
+    def calc_constraint_loss(self, u: torch.Tensor) -> torch.Tensor:
+
+        """Calculate the constraint loss for a field, u.
+
+        Parameters
+        ----------
+        u: torch.Tensor
+            Field in the physical domain.
+
+        Raises
+        ------
+        NotImplementedError
+            Raises as this method needs to be overwritten before used.
+        """
+
+        raise NotImplementedError('BaseLoss:calc_constraint_loss()')
+
+
+class LinearCDLoss(BaseLoss):                                                          # pylint: disable=abstract-method
+
+    constraints: bool = False
 
     def __init__(self, nk: int, c: float, re: float, dt: float, fwt_lb: float, device: torch.device) -> None:
 
@@ -157,7 +230,9 @@ class LinearCDLoss(BaseLoss):
         self.solver = LinearCDS(nk=nk, c=c, re=re, ndim=2, device=device)
 
 
-class NonlinearCDLoss(BaseLoss):
+class NonlinearCDLoss(BaseLoss):                                                       # pylint: disable=abstract-method
+
+    constraints: bool = False
 
     def __init__(self, nk: int, re: float, dt: float, fwt_lb: float, device: torch.device) -> None:
 
@@ -179,6 +254,73 @@ class NonlinearCDLoss(BaseLoss):
 
         super().__init__(dt=dt, fwt_lb=fwt_lb)
         self.solver = NonlinearCDS(nk=nk, re=re, ndim=2, device=device)
+
+
+class KolmogorovLoss(BaseLoss):
+
+    constraints: bool = True
+
+    def __init__(self, nk: int, re: float, dt: float, fwt_lb: float, device: torch.device) -> None:
+
+        """Kolmogorov Flow Loss.
+
+        Parameters
+        ----------
+        nk: int
+            Number of symmetric wavenumbers to use.
+        re: float
+            Reynolds number of the flow.
+        dt: float
+            Length of the time-step.
+        fwt_lb: float
+            Fourier weighting term - lower bound.
+        device: torch.device
+            Device on which to initialise the tensors.
+        """
+
+        super().__init__(dt, fwt_lb)
+        self.solver = KolSol(nk=nk, nf=4, re=re, ndim=2, device=device)
+
+    def _constraint(self, t_hat: torch.Tensor) -> torch.Tensor:
+
+        """Calculate the continuity on t_hat in the Fourier domain.
+
+        Parameters
+        ----------
+        t_hat: torch.Tensor
+            Tensor, t, in the Fourier domain.
+
+        Returns
+        -------
+        torch.Tensor
+            Constraint of tensor, t, in the Fourier domain.
+        """
+
+
+        return oe.contract('iju, btiju -> btiju', self.solver.nabla, t_hat)
+
+    def calc_constraint_loss(self, u: torch.Tensor) -> torch.Tensor:
+
+        """Calculate continuity loss for physical field.
+
+        Parameters
+        ----------
+        u: torch.Tensor
+            Field to calculate residual loss for.
+
+        Returns
+        -------
+        torch.Tensor
+            Continuity loss of the input field.
+        """
+
+        u = einops.rearrange(u, 'b t u i j -> b t i j u')
+        u_hat = self.solver.phys_to_fourier(u)
+
+        constraint_u = self._constraint(u_hat)
+        loss = oe.contract('... -> ', constraint_u * torch.conj(constraint_u)) / constraint_u.numel()
+
+        return loss
 
 
 def get_loss_fn(config: ExperimentConfig, device: torch.device) -> PILoss:
@@ -203,5 +345,8 @@ def get_loss_fn(config: ExperimentConfig, device: torch.device) -> PILoss:
 
     if config.SOLVER_FN == eSolverFunction.NONLINEAR:
         return NonlinearCDLoss(nk=config.NK, re=config.RE, dt=config.DT, fwt_lb=config.FWT_LB, device=device)
+
+    if config.SOLVER_FN == eSolverFunction.KOLMOGOROV:
+        return KolmogorovLoss(nk=config.NK, re=config.RE, dt=config.DT, fwt_lb=config.FWT_LB, device=device)
 
     raise ValueError('Incompatible Loss Type...')

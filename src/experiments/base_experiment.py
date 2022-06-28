@@ -16,6 +16,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 from wandb.sdk.lib import RunDisabled
 from wandb.wandb_run import Run
+from picr import loss
 
 sys.path.append('../..')
 from picr.model import Autoencoder
@@ -35,6 +36,8 @@ warnings.filterwarnings("ignore", category=UserWarning)
 # machine constants
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 DEVICE_KWARGS = {'num_workers': 1, 'pin_memory': True} if DEVICE == 'cuda' else {}
+
+CONSIDER_CONSTRAINT: bool = True
 
 
 class WandbConfig(NamedTuple):
@@ -264,28 +267,33 @@ def train_loop(model: nn.Module,
         # LOSS :: 01 :: Clean Velocity Field :: || R(\hat{u}) ||
         r_u_loss = loss_fn.calc_residual_loss(u_prediction)
 
-        # LOSS :: 02 :: Boundary Loss :: || \hat{u_b} - u_b ||
+        # LOSS :: 02 :: Constraint Loss :: || C(\hat{u}) ||
+        c_u_loss: torch.Tensor
+        if loss_fn.constraints:
+            c_u_loss = loss_fn.calc_constraint_loss(u_prediction)
+
+        # LOSS :: 03 :: Boundary Loss :: || \hat{u_b} - u_b ||
         u_boundaries = get_boundaries(data)
         u_prediction_boundaries = get_boundaries(u_prediction)
 
         boundary_loss = oe.contract('... -> ', (u_boundaries - u_prediction_boundaries) ** 2) / u_boundaries.numel()
         boundary_loss *= s_lambda
 
-        # LOSS :: 03 :: Stationary Corruption :: || \partial_t \hat{\phi} ||
+        # LOSS :: 04 :: Stationary Corruption :: || \partial_t \hat{\phi} ||
         dphi_dt = (1.0 / simulation_dt) * (phi_prediction[:, 1:, ...] - phi_prediction[:, :-1, ...])
         dphi_dt = oe.contract('... -> ', dphi_dt ** 2) / dphi_dt.numel()
         dphi_dt *= s_lambda
 
-        # LOSS :: 04 :: Mean Corruption :: || \hat{\phi} - <\hat{\phi}> ||
+        # LOSS :: 05 :: Mean Corruption :: || \hat{\phi} - <\hat{\phi}> ||
         r_phi = phi_prediction - einops.reduce(phi_prediction, 'b t u i j -> i j', torch.mean)
         mean_phi_loss = oe.contract('... -> ', r_phi ** 2) / r_phi.numel()
 
         mean_phi_loss *= s_lambda
 
-        # LOSS :: 05 :: Total Loss
-        total_loss = r_u_loss + boundary_loss + dphi_dt + mean_phi_loss
+        # LOSS :: 06 :: Total Loss
+        total_loss = r_u_loss + boundary_loss + dphi_dt + mean_phi_loss + loss_fn.constraints * c_u_loss
 
-        # LOSS :: 06 :: u, \phi -- Clean
+        # LOSS :: 07 :: u, \phi -- Clean
         clean_u_loss = torch.sqrt(torch.sum((data - u_prediction) ** 2) / torch.sum(data ** 2))
         clean_phi_loss = torch.sqrt(torch.sum((phi - phi_prediction) ** 2) / torch.sum(phi ** 2))
 
@@ -380,8 +388,11 @@ def main(args: argparse.Namespace) -> None:
     u_max: float = torch.max(u_all).item()
     phi_limit = config.PHI_LIMIT * u_max
 
-    phi_fn = set_corruption_fn(config.PHI_FN, config.NX, config.PHI_FREQ, phi_limit)
-    loss_fn = get_loss_fn(config, DEVICE)
+    phi_fn: ft.partial = set_corruption_fn(config.PHI_FN, config.NX, config.PHI_FREQ, phi_limit)
+    loss_fn: PILoss = get_loss_fn(config, DEVICE)
+
+    # flag to determine whether we will consider the constraints in the loss
+    loss_fn.constraints = CONSIDER_CONSTRAINT
 
     # initialise model / optimizer
     model = initialise_model(config, args.model_path)

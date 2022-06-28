@@ -1,5 +1,4 @@
 import argparse
-import sys
 from pathlib import Path
 from typing import Any, Dict
 
@@ -7,8 +6,10 @@ import h5py
 import numpy as np
 import tqdm
 
-sys.path.append('../..')
-from picr.solvers.numpy import NonlinearCDS
+from kolsol.numpy.solver import KolSol
+
+
+NF: float = 4.0
 
 
 def setup_directory(path: Path) -> None:
@@ -52,7 +53,7 @@ def write_h5(path: Path, data: Dict[str, Any]) -> None:
 
 def main(args: argparse.Namespace) -> None:
 
-    """Generate Non-linear Convection-Diffusion Data.
+    """Generate Kolmogorov Flow Data.
 
     Parameters
     ----------
@@ -60,20 +61,21 @@ def main(args: argparse.Namespace) -> None:
         Command line arguments.
     """
 
-    print('00 :: Initialising Non-linear Convection-Diffusion Solver.')
+    print('00 :: Initialising Kolmogorov Flow Solver.')
 
     setup_directory(args.data_path)
 
-    ks = NonlinearCDS(nk=args.nk, re=args.re, ndim=args.ndim)
-    field_hat = ks.random_field(magnitude=10.0, sigma=1.2)
+    cds = KolSol(nk=args.nk, nf=NF, re=args.re, ndim=args.ndim)
+    field_hat = cds.random_field(magnitude=10.0, sigma=1.2)
 
     # define time-arrays for simulation run
     t_arange = np.arange(0.0, args.time_simulation, args.dt)
+
     nt = t_arange.shape[0]
 
     # setup recording arrays
     velocity_arr = np.zeros(shape=(nt, args.resolution, args.resolution, args.ndim))
-    velocity_hat_arr = np.zeros(shape=(nt, ks.nk_grid, ks.nk_grid, args.ndim), dtype=np.complex128)
+    velocity_hat_arr = np.zeros(shape=(nt, cds.nk_grid, cds.nk_grid, args.ndim), dtype=np.complex128)
 
     dissipation_arr = np.zeros(shape=(nt, 1))
 
@@ -82,17 +84,16 @@ def main(args: argparse.Namespace) -> None:
     for t in tqdm.trange(nt, desc=msg):
 
         # time integrate
-        field_hat += args.dt * ks.dynamics(field_hat)
+        field_hat += args.dt * cds.dynamics(field_hat)
 
         # record metrics
         velocity_hat_arr[t, ...] = field_hat
-        velocity_arr[t, ...] = ks.fourier_to_phys(field_hat, nref=args.resolution)
+        velocity_arr[t, ...] = cds.fourier_to_phys(field_hat, nref=args.resolution)
 
-        dissipation_arr[t, ...] = ks.dissip(field_hat)
-
-    print(velocity_arr.dtype)
+        dissipation_arr[t, ...] = cds.dissip(field_hat)
 
     data_dict = {
+        'nf': NF,
         're': args.re,
         'dt': args.dt,
         'nk': args.nk,
@@ -112,7 +113,7 @@ def main(args: argparse.Namespace) -> None:
 
 if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser(description='Generate Kolmogorov Flow Data')
+    parser = argparse.ArgumentParser(description='Generate Kolmogorov Flow Data.')
 
     # arguments to define output
     parser.add_argument('--data-path', type=Path, required=True)
@@ -124,7 +125,7 @@ if __name__ == '__main__':
     parser.add_argument('--dt', type=float, default=0.01)
     parser.add_argument('--time-simulation', type=float, required=True)
 
-    # arguments for KolSol
+    # arguments for LinearCDS
     parser.add_argument('--nk', type=int, default=8)
     parser.add_argument('--ndim', type=int, default=2)
 
