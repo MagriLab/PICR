@@ -6,7 +6,6 @@ import sys
 from pathlib import Path
 from shutil import copyfile
 from typing import Callable, Dict, NamedTuple, Optional, Union
-import PIL
 
 import einops
 import numpy as np
@@ -375,7 +374,10 @@ def main(args: argparse.Namespace) -> None:
     validation_loader: DataLoader = generate_dataloader(validation_u, config.BATCH_SIZE, DEVICE_KWARGS)
 
     # get corruption function and loss function
-    phi_fn = set_corruption_fn(config.PHI_FN, config.NX, config.PHI_FREQ, config.PHI_LIMIT)
+    u_max: float = torch.max(u_all).item()
+    phi_limit = config.PHI_LIMIT * u_max
+
+    phi_fn = set_corruption_fn(config.PHI_FN, config.NX, config.PHI_FREQ, phi_limit)
     loss_fn = get_loss_fn(config, DEVICE)
 
     # initialise model / optimizer
