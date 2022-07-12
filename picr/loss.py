@@ -83,7 +83,6 @@ class PILoss(Protocol):
 class BaseLoss:
 
     solver: Solver
-    constraints: bool
 
     def __init__(self, dt: float, fwt_lb: float) -> None:
 
@@ -99,6 +98,8 @@ class BaseLoss:
 
         self.dt = dt
         self.fwt_lb = fwt_lb
+
+        self.constraints: bool
 
     @property
     def fwt(self) -> torch.Tensor:
@@ -204,8 +205,6 @@ class BaseLoss:
 
 class LinearCDLoss(BaseLoss):                                                          # pylint: disable=abstract-method
 
-    constraints: bool = False
-
     def __init__(self, nk: int, c: float, re: float, dt: float, fwt_lb: float, device: torch.device) -> None:
 
         """Linear Convection-Diffusion Loss.
@@ -229,10 +228,10 @@ class LinearCDLoss(BaseLoss):                                                   
         super().__init__(dt=dt, fwt_lb=fwt_lb)
         self.solver = LinearCDS(nk=nk, c=c, re=re, ndim=2, device=device)
 
+        self.constraints = False
+
 
 class NonlinearCDLoss(BaseLoss):                                                       # pylint: disable=abstract-method
-
-    constraints: bool = False
 
     def __init__(self, nk: int, re: float, dt: float, fwt_lb: float, device: torch.device) -> None:
 
@@ -255,10 +254,10 @@ class NonlinearCDLoss(BaseLoss):                                                
         super().__init__(dt=dt, fwt_lb=fwt_lb)
         self.solver = NonlinearCDS(nk=nk, re=re, ndim=2, device=device)
 
+        self.constraints = False
+
 
 class KolmogorovLoss(BaseLoss):
-
-    constraints: bool = True
 
     def __init__(self, nk: int, re: float, dt: float, fwt_lb: float, device: torch.device) -> None:
 
@@ -280,6 +279,8 @@ class KolmogorovLoss(BaseLoss):
 
         super().__init__(dt, fwt_lb)
         self.solver = KolSol(nk=nk, nf=4, re=re, ndim=2, device=device)
+
+        self.constraints = True
 
     def _constraint(self, t_hat: torch.Tensor) -> torch.Tensor:
 
