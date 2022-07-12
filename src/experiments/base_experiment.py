@@ -16,7 +16,6 @@ from torch import nn
 from torch.utils.data import DataLoader
 from wandb.sdk.lib import RunDisabled
 from wandb.wandb_run import Run
-from picr import loss
 
 sys.path.append('../..')
 from picr.model import Autoencoder
@@ -36,8 +35,6 @@ warnings.filterwarnings("ignore", category=UserWarning)
 # machine constants
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 DEVICE_KWARGS = {'num_workers': 1, 'pin_memory': True} if DEVICE == 'cuda' else {}
-
-CONSIDER_CONSTRAINT: bool = True
 
 
 class WandbConfig(NamedTuple):
@@ -268,7 +265,7 @@ def train_loop(model: nn.Module,
         r_u_loss = loss_fn.calc_residual_loss(u_prediction)
 
         # LOSS :: 02 :: Constraint Loss :: || C(\hat{u}) ||
-        c_u_loss: torch.Tensor
+        c_u_loss = torch.zeros_like(r_u_loss)
         if loss_fn.constraints:
             c_u_loss = loss_fn.calc_constraint_loss(u_prediction)
 
@@ -344,7 +341,7 @@ def main(args: argparse.Namespace) -> None:
         Command-line arguments to dictate experiment run.
     """
 
-    if args.run_gpu >= 0 and args.run_gpu < torch.cuda.device_count():
+    if args.run_gpu is not None and args.run_gpu >= 0 and args.run_gpu < torch.cuda.device_count():
 
         global DEVICE
         global DEVICE_KWARGS
@@ -361,9 +358,6 @@ def main(args: argparse.Namespace) -> None:
     # load yaml configuration file
     config = ExperimentConfig()
     config.load_config(args.config_path)
-
-    if not (isinstance(config.PHI_FREQ, float) and isinstance(config.PHI_LIMIT, float)):
-        raise ValueError('PHI_FREQ, PHI_LIMIT must be float for this experiment run.')
 
     # initialise weights and biases
     wandb_config = WandbConfig(entity=args.wandb_entity, project=args.wandb_project, group=args.wandb_group)
@@ -390,9 +384,6 @@ def main(args: argparse.Namespace) -> None:
 
     phi_fn: ft.partial = set_corruption_fn(config.PHI_FN, config.NX, config.PHI_FREQ, phi_limit)
     loss_fn: PILoss = get_loss_fn(config, DEVICE)
-
-    # flag to determine whether we will consider the constraints in the loss
-    loss_fn.constraints = CONSIDER_CONSTRAINT
 
     # initialise model / optimizer
     model = initialise_model(config, args.model_path)
@@ -457,9 +448,6 @@ if __name__ == '__main__':
 
     # argument to define optional path to load pre-trained model
     parser.add_argument('-mp', '--model-path', type=Path, required=False)
-
-    parser.add_argument('-gpu', '--run-gpu', type=int, required=False)
-    parser.add_argument('-mf', '--memory-fraction', type=float, required=False)
 
     parser.add_argument('-gpu', '--run-gpu', type=int, required=False)
     parser.add_argument('-mf', '--memory-fraction', type=float, required=False)

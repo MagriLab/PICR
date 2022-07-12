@@ -45,8 +45,8 @@ class ExperimentConfig:                                                   # pyli
 
     # corruption parameters
     PHI_FN: eCorruption = field(init=False)
-    PHI_FREQ: Union[float, List[float]] = field(init=False)
-    PHI_LIMIT: Union[float, List[float]] = field(init=False)
+    PHI_FREQ: float = field(init=False)
+    PHI_LIMIT: float = field(init=False)
 
     # loss parameters
     FWT_LB: float = field(init=False)
