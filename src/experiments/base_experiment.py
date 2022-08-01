@@ -385,6 +385,9 @@ def main(args: argparse.Namespace) -> None:
     phi_fn: ft.partial = set_corruption_fn(config.PHI_FN, config.NX, config.PHI_FREQ, phi_limit)
     loss_fn: PILoss = get_loss_fn(config, DEVICE)
 
+    # We can optionally disable the constraints here for testing
+    # loss_fn.constraints = False
+
     # initialise model / optimizer
     model = initialise_model(config, args.model_path)
     model.to(torch.float)
