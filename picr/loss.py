@@ -296,7 +296,7 @@ class KolmogorovLoss(BaseLoss):
             Constraint of tensor, t, in the Fourier domain.
         """
 
-        return oe.contract('iju, btiju -> btiju', self.solver.nabla, t_hat)
+        return oe.contract('iju, btiju -> bt', self.solver.nabla, t_hat)
 
     def calc_constraint_loss(self, u: torch.Tensor) -> torch.Tensor:
 
@@ -317,6 +317,8 @@ class KolmogorovLoss(BaseLoss):
         u_hat = self.solver.phys_to_fourier(u)
 
         constraint_u = self._constraint(u_hat)
+
+        # TODO >> Do we want to normalise by constraint_u.numel() or u_hat.numel()
         loss = oe.contract('... -> ', constraint_u * torch.conj(constraint_u)) / constraint_u.numel()
 
         return loss
