@@ -70,8 +70,10 @@ def main(args: argparse.Namespace) -> None:
 
     # define time-arrays for simulation run
     t_arange = np.arange(0.0, args.time_simulation, args.dt)
+    transients_arange = np.arange(0.0, args.time_transient, args.dt)
 
     nt = t_arange.shape[0]
+    nt_transients = transients_arange.shape[0]
 
     # setup recording arrays
     velocity_arr = np.zeros(shape=(nt, args.resolution, args.resolution, args.ndim))
@@ -79,8 +81,13 @@ def main(args: argparse.Namespace) -> None:
 
     dissipation_arr = np.zeros(shape=(nt, 1))
 
+    # integrate over transients
+    msg = '01 :: Integrating over transients.'
+    for _ in tqdm.trange(nt_transients, desc=msg):
+        field_hat += args.dt * cds.dynamics(field_hat)
+
     # integrate over simulation domain
-    msg = '01 :: Integrating over simulation domain'
+    msg = '02 :: Integrating over simulation domain'
     for t in tqdm.trange(nt, desc=msg):
 
         # time integrate
@@ -121,11 +128,12 @@ if __name__ == '__main__':
 
     # arguments to define simulation
     parser.add_argument('--re', type=float, required=True)
-
     parser.add_argument('--dt', type=float, default=0.01)
-    parser.add_argument('--time-simulation', type=float, required=True)
 
-    # arguments for LinearCDS
+    parser.add_argument('--time-simulation', type=float, required=True)
+    parser.add_argument('--time-transient', type=float, default=180.0)
+
+    # arguments for Kolmogorov flow
     parser.add_argument('--nk', type=int, default=8)
     parser.add_argument('--ndim', type=int, default=2)
 

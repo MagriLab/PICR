@@ -121,7 +121,7 @@ def train_validation_split(data: torch.Tensor,
 
     # choose n_train + n_validation random indices from the dataset without replacement
     n_points = n_train + n_validation
-    idx = torch.Tensor(generate_random_idx(data, n_points, step=step))
+    idx = torch.tensor(generate_random_idx(data, n_points, step=step))
 
     # split data into train / validation
     d_train, d_validation = torch.split(data[idx], [n_train, n_validation])
