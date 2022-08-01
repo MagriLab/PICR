@@ -169,7 +169,7 @@ def set_corruption_fn(e_phi_fn: eCorruption,
 
     # get corruption function
     _phi_fn = get_corruption_fn(e_phi_fn)
-    phi_fn = ft.partial(_phi_fn, x=xx, freq=frequency, limit=magnitude)
+    phi_fn = ft.partial(_phi_fn, x=xx, freq=frequency, limit=magnitude)                                   # type: ignore
 
     return phi_fn
 

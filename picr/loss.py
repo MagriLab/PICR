@@ -15,7 +15,7 @@ from .utils.config import ExperimentConfig
 
 class PILoss(Protocol):
 
-    solver: Solver
+    solver: Solver[torch.Tensor]
     constraints: bool
 
     def _residual(self, t_hat: torch.Tensor) -> torch.Tensor:
@@ -79,10 +79,9 @@ class PILoss(Protocol):
         """
 
 
-
 class BaseLoss:
 
-    solver: Solver
+    solver: Solver[torch.Tensor]
 
     def __init__(self, dt: float, fwt_lb: float) -> None:
 
@@ -252,7 +251,7 @@ class NonlinearCDLoss(BaseLoss):                                                
         """
 
         super().__init__(dt=dt, fwt_lb=fwt_lb)
-        self.solver = NonlinearCDS(nk=nk, re=re, ndim=2, device=device)
+        self.solver: Solver = NonlinearCDS(nk=nk, re=re, ndim=2, device=device)
 
         self.constraints = False
 
@@ -296,7 +295,6 @@ class KolmogorovLoss(BaseLoss):
         torch.Tensor
             Constraint of tensor, t, in the Fourier domain.
         """
-
 
         return oe.contract('iju, btiju -> btiju', self.solver.nabla, t_hat)
 

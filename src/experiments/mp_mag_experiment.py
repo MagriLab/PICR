@@ -14,8 +14,8 @@ import yaml
 queue: Queue = Queue()
 
 NUM_GPUS = torch.cuda.device_count()
-PROC_PER_GPU = 15
-MEMORY_FRACTION = 0.065
+PROC_PER_GPU = 10
+MEMORY_FRACTION = 0.095
 
 
 class WandbConfig(NamedTuple):
@@ -60,7 +60,9 @@ def generate_config(experiment_config_path: Path, derived_config_path: Path, mag
 
     Parameters
     ----------
-    config_path: Path
+    experiment_config_path: Path
+        Path pointing to existing config file to change.
+    derived_config_path: Path
         Path to save the config file to.
     mag: float
         Magnitude used to generate the config file.
@@ -73,7 +75,7 @@ def generate_config(experiment_config_path: Path, derived_config_path: Path, mag
     with open(experiment_config_path, 'r', encoding='utf8') as f:
         config = yaml.load(stream=f, Loader=yaml.CLoader)
 
-    # override frequency and write derived config
+    # override magnitude and write derived config
     config['CORRUPTION_PARAMETERS']['PHI_LIMIT'] = mag
 
     with open(derived_config_path, 'w+') as f:
@@ -98,7 +100,7 @@ def run_job(job: Job) -> None:
         print(f'Running {job} on GPU {gpu_id}')
 
         subprocess_args = [
-           'python',
+            'python',
             'base_experiment.py',
             '--experiment-path', job.experiment_path,
             '--data-path', job.data_path,
@@ -130,17 +132,17 @@ def run_job(job: Job) -> None:
 
 def get_magnitudes(experiment_config_path: Path) -> List[float]:
 
-    """Extract frequencies from experiment config.
+    """Extract magnitudes from experiment config.
 
     Parameters
     ----------
     experiment_config_path: Path
-        Path to config file to dictate frequency experiments.
+        Path to config file to dictate magnitude experiments.
 
     Returns
     -------
     magnitudes: List[float]
-        List of all the frequencies to run for the experiment.
+        List of all the magnitudes to run for the experiment.
     """
 
     with open(experiment_config_path, 'r', encoding='utf8') as f:
@@ -156,7 +158,7 @@ def get_magnitudes(experiment_config_path: Path) -> List[float]:
 
 def main(args: argparse.Namespace) -> None:
 
-    """Run the Frequency Experiment.
+    """Run the Magnitude Experiment.
 
     Parameters
     ----------
@@ -174,17 +176,17 @@ def main(args: argparse.Namespace) -> None:
         for _ in range(PROC_PER_GPU):
             queue.put(gpu_ids)
 
-    # get frequencies to test
+    # get magnitudes to test
     magnitudes = get_magnitudes(args.experiment_config_path)
 
     job_list = []
-    for mag in magnitudes:
+    for idx_mag, mag in enumerate(magnitudes):
 
-        config_path = base_config_path / f'config_f{int(mag)}.yml'
+        config_path = base_config_path / f'config_f{idx_mag}.yml'
         generate_config(experiment_config_path=args.experiment_config_path, derived_config_path=config_path, mag=mag)
 
         for idx_run in range(args.n_samples):
-            experiment_path = args.base_experiment_path / f'FREQ{int(mag):02}' / f'{idx_run:03}'
+            experiment_path = args.base_experiment_path / f'MAG{idx_mag:02}' / f'{idx_run:03}'
             job_list.append(Job(config_path, args.data_path, experiment_path, wandb_config))
 
     with Pool(processes=PROC_PER_GPU * NUM_GPUS) as pool:
@@ -199,7 +201,7 @@ def main(args: argparse.Namespace) -> None:
 
 if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser(description='FREQ EXPERIMENT')
+    parser = argparse.ArgumentParser(description='MAG EXPERIMENT')
 
     # arguments to define experiment
     parser.add_argument('-ns', '--n-samples', type=int, required=True)

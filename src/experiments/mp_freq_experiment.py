@@ -14,8 +14,8 @@ import torch
 queue: Queue = Queue()
 
 NUM_GPUS = torch.cuda.device_count()
-PROC_PER_GPU = 15
-MEMORY_FRACTION = 0.065
+PROC_PER_GPU = 10
+MEMORY_FRACTION = 0.095
 
 
 class WandbConfig(NamedTuple):
@@ -50,8 +50,7 @@ class Job:
         self.wandb_config = wandb_config
 
     def __str__(self) -> str:
-        msg = f'Job({self.experiment_path})'
-        return msg
+        return f'Job({self.experiment_path})'
 
 
 def generate_config(experiment_config_path: Path, derived_config_path: Path, freq: float) -> None:
@@ -60,7 +59,9 @@ def generate_config(experiment_config_path: Path, derived_config_path: Path, fre
 
     Parameters
     ----------
-    config_path: Path
+    experiment_config_path: Path
+        Path pointing to existing config file to change.
+    derived_config_path: Path
         Path to save the config file to.
     freq: float
         Frequency used to generate the config file.
@@ -98,7 +99,7 @@ def run_job(job: Job) -> None:
         print(f'Running {job} on GPU {gpu_id}')
 
         subprocess_args = [
-           'python',
+            'python',
             'base_experiment.py',
             '--experiment-path', job.experiment_path,
             '--data-path', job.data_path,

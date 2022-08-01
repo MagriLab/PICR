@@ -35,8 +35,8 @@ class LinearCDS(KolSol):
         self.c = c
         self.nu = 1.0 / self.re
 
-        self.kk: torch.Tensor = self.kk.to(torch.float)
-        self.nabla: torch.Tensor = self.nabla.to(torch.float)
+        self.kk: torch.Tensor = self.kk.to(torch.cfloat)
+        self.nabla: torch.Tensor = self.nabla.to(torch.cfloat)
 
     def dynamics(self, u_hat: torch.Tensor) -> torch.Tensor:
 
