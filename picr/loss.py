@@ -296,7 +296,7 @@ class KolmogorovLoss(BaseLoss):
             Constraint of tensor, t, in the Fourier domain.
         """
 
-        return oe.contract('iju, btiju -> bt', self.solver.nabla, t_hat)
+        return oe.contract('iju, btiju -> bt', self.solver.nabla.to(torch.cfloat), t_hat)
 
     def calc_constraint_loss(self, u: torch.Tensor) -> torch.Tensor:
 
