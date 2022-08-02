@@ -2,15 +2,19 @@
 import argparse
 import csv
 import functools as ft
+import operator
 
 import sys
+import tqdm
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, Union
 
 import h5py
+
 import einops
 import numpy as np
 import opt_einsum as oe
+
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
@@ -19,10 +23,10 @@ sys.path.append('../..')
 from picr.model import Autoencoder
 
 from picr.corruption import get_corruption_fn
-from picr.experiments.data import load_data, generate_dataloader
+from picr.experiments.data import generate_dataloader
 
 from picr.utils.config import ExperimentConfig
-from picr.utils.enums import eCorruption
+from picr.utils.enums import eCorruption, eSolverFunction
 
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -31,6 +35,47 @@ warnings.filterwarnings("ignore", category=UserWarning)
 # machine constants
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 DEVICE_KWARGS = {'num_workers': 1, 'pin_memory': True} if DEVICE == 'cuda' else {}
+
+
+def load_data(h5_file: Path, config: ExperimentConfig) -> torch.Tensor:
+
+    """Loads simulation data as torch.Tensor.
+
+    Parameters
+    ----------
+    h5_file: Path
+        Path to the .h5 file containing simulation data.
+    config: ExperimentConfig
+        Configuration object holding key information about simulation.
+
+    Returns
+    -------
+    u_all: torch.Tensor
+        Loaded simulation data.
+    """
+
+    with h5py.File(h5_file, 'r') as hf:
+
+        # check configuration matches given simulation file
+        config_mismatch = []
+        for x, config_x in zip(['re', 'nk', 'dt', 'resolution', 'ndim'], [config.RE, config.NK, config.DT, config.NX, config.NU]):
+            if np.array(hf.get(x)) != np.array(config_x):
+                config_mismatch.append(x)
+
+        if config.SOLVER_FN == eSolverFunction.LINEAR:
+            if np.array(hf.get('c')) != np.array(config.C):
+                config_mismatch.append('c')
+
+        if config_mismatch:
+            raise ValueError(f'Configuration does not match simulation: {config_mismatch}')
+
+        # load data from h5 file
+        u_all = np.array(hf.get('velocity_field'))
+
+    u_all = einops.rearrange(u_all, 'b i j u -> b 1 u i j')
+    u_tensor_all = torch.from_numpy(u_all).to(torch.float)
+
+    return u_tensor_all
 
 
 def set_corruption_fn(e_phi_fn: eCorruption,
@@ -129,7 +174,7 @@ def write_h5(path: Path, data: Dict[str, Any]) -> None:
 def inference(model: nn.Module,
               data: torch.Tensor,
               batch_size: int,
-              phi_fn: ft.partial) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, float]]:
+              phi_fn: ft.partial) -> Dict[str, Any]:
 
     """Run inference on the given data.
 
@@ -146,26 +191,20 @@ def inference(model: nn.Module,
 
     Returns:
     ========
-    u_predictions: torch.Tensor
-        Predictions for the velocity field.
-    phi_predicitons: torch.Tensor
-        Predictions for the corruption field.
-    loss_dict: Dict[str, float]
-        Dictionary containing the losses
+    return_dict: Dict[str, Any]
+        Dictionary containing information from inference.
     """
 
     # initialise variables to store data
+    corrupted_u = torch.zeros_like(data, device=torch.device('cpu'))
+
     u_predictions = torch.zeros_like(data, device=torch.device('cpu'))
     phi_predictions = torch.zeros_like(data, device=torch.device('cpu'))
 
     dataloader = generate_dataloader(data, batch_size, DEVICE_KWARGS) 
 
-    # initialise losses for the batches
-    batched_clean_u_loss = (0.0 + 0.0j)
-    batched_clean_phi_loss = (0.0 + 0.0j)
-
     model.train(mode=False)
-    for idx, batch in enumerate(dataloader):
+    for idx, batch in enumerate(tqdm.tqdm(dataloader, total=len(dataloader))):
         
         # conduct inference on the batch
         batch = batch.to(DEVICE)
@@ -179,26 +218,21 @@ def inference(model: nn.Module,
         u_pred = model(zeta)
         phi_pred = zeta - u_pred
 
-        # calculate relative l2 loss
-        clean_u_loss = torch.sqrt(torch.sum((batch - u_pred) ** 2) / torch.sum(batch ** 2))
-        clean_phi_loss = torch.sqrt(torch.sum((phi - phi_pred) ** 2) / torch.sum(phi ** 2))
-
         # move predictions
-        u_predictions[idx * batch : idx * batch + u_pred.size(0), ...] = u_pred.cpu()
-        phi_predictions[idx * batch : idx * batch + u_pred.size(0), ...] = phi_pred.cpu()
+        batch_slice = slice(idx * batch_size, idx * batch_size + u_pred.size(0))
 
-        batched_clean_u_loss += clean_u_loss.item() * batch.size(0)
-        batched_clean_phi_loss += clean_phi_loss.item() * batch.size(0)
+        corrupted_u[batch_slice, ...] = zeta.detach().cpu()
+        u_predictions[batch_slice, ...] = u_pred.detach().cpu()
+        phi_predictions[batch_slice, ...] = phi_pred.detach().cpu()
 
-    batched_clean_u_loss /= len(dataloader.batchset)
-    batched_clean_phi_loss /= len(dataloader.batchset)
-
-    loss_dict: Dict[str, float] = {
-        'clean_u_loss': batched_clean_u_loss,
-        'clean_phi_loss': batched_clean_phi_loss
+    return_dict: Dict[str, Any] = {
+        'phi': phi[0, 0, 0, ...].detach().cpu(),
+        'corrupted_u': corrupted_u,
+        'u_predictions': u_predictions,
+        'phi_predictions': phi_predictions,
     }
 
-    return u_predictions, phi_predictions, loss_dict
+    return return_dict
 
 
 def main(args: argparse.Namespace) -> None:
@@ -229,7 +263,10 @@ def main(args: argparse.Namespace) -> None:
     config = ExperimentConfig()
     config.load_config(args.config_path)
 
-    u_all: torch.Tensor = load_data(h5_file=args.data_path, config=config).to(torch.float)
+    if args.batch_size:
+        config.BATCH_SIZE = args.batch_size
+
+    u_all: torch.Tensor = load_data(h5_file=args.data_path, config=config)
     u_max: float = torch.max(u_all).item()
 
     phi_limit = config.PHI_LIMIT * u_max
@@ -240,15 +277,21 @@ def main(args: argparse.Namespace) -> None:
     model.to(torch.float)
     
     # run inference
-    u_predictions, phi_predictions, loss_dict = inference(model, u_all, config.BATCH_SIZE, phi_fn)
+    inference_dict = inference(model, u_all, config.BATCH_SIZE, phi_fn)
 
     # create dictionary and log to file
-    u_original = u_all.numpy()
-    u_predictions = u_predictions.numpy()
-    phi_predictions = phi_predictions.numpy()
+    u_original = u_all.detach().numpy()
+
+    u_predictions = inference_dict['u_predictions'].numpy()
+    phi_predictions = inference_dict['phi_predictions'].numpy()
+
+    phi = inference_dict['phi'].numpy()
+    corrupted_u = inference_dict['corrupted_u'].numpy()
 
     h5_dict = {
+        'phi': phi,
         'u_original': u_original,
+        'corrupted_u': corrupted_u,
         'u_predictions': u_predictions,
         'phi_predictions': phi_predictions
     }
@@ -265,6 +308,7 @@ if __name__ == '__main__':
     parser.add_argument('-mp', '--model-path', type=Path, required=True)
     parser.add_argument('-sp', '--save-path', type=Path, required=True)
 
+    parser.add_argument('-bs', '--batch-size', type=int, required=False)
     parser.add_argument('-gpu', '--run-gpu', type=int, required=False)
     parser.add_argument('-mf', '--memory-fraction', type=float, required=False)
 
