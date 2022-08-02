@@ -204,7 +204,9 @@ def inference(model: nn.Module,
     dataloader = generate_dataloader(data, batch_size, DEVICE_KWARGS) 
 
     model.train(mode=False)
-    for idx, batch in enumerate(tqdm.tqdm(dataloader, total=len(dataloader))):
+
+    msg = ' 01 :: Conducting inference on batches.'
+    for idx, batch in enumerate(tqdm.tqdm(dataloader, total=len(dataloader), desc=msg)):
         
         # conduct inference on the batch
         batch = batch.to(DEVICE)
@@ -244,6 +246,8 @@ def main(args: argparse.Namespace) -> None:
     args: argparse.Namespace
         Command-line arguments to dictate inference run.
     """
+
+    print('00 :: Running inference on given data.')
 
     if args.run_gpu is not None and args.run_gpu >= 0 and args.run_gpu < torch.cuda.device_count():
 
@@ -296,7 +300,10 @@ def main(args: argparse.Namespace) -> None:
         'phi_predictions': phi_predictions
     }
 
+    print('02 :: Writing results to file.')
     write_h5(args.save_path, h5_dict)
+
+    print('03 :: Inference complete.')
 
 
 if __name__ == '__main__':
