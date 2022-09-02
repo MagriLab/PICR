@@ -1,5 +1,5 @@
-from typing import Callable
 from types import ModuleType
+from typing import Callable
 
 import numpy as np
 import opt_einsum as oe

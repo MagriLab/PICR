@@ -1,5 +1,36 @@
+[tool.poetry]
+name = "picr"
+version = "0.1.0"
+description = ""
+authors = ["danielkelshaw <daniel.j.kelshaw@gmail.com>"]
+license = "MIT License"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+numpy = "^1.23.2"
+einops = "^0.4.1"
+opt-einsum = "^3.3.0"
+h5py = "^3.7.0"
+PyYAML = "^6.0"
+wandb = "^0.13.2"
+tqdm = "^4.64.0"
+matplotlib = "^3.5.3"
+torch = "^1.12.1"
+kolsol = {git = "https://github.com/MagriLab/KolSol", rev = "main"}
+
+[tool.poetry.group.dev.dependencies]
+mypy = "0.931"
+pre-commit = "^2.20.0"
+pylint = "^2.15.0"
+isort = "^5.10.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
 [tool.mypy]
-python_version = 3.8
+python_version = "3.10"
 warn_return_any = false
 warn_unused_configs = true
 ignore_missing_imports = true
@@ -28,3 +59,12 @@ disable = [
   'global-statement',
   'cell-var-from-loop'
 ]
+
+[tool.isort]
+py_version = 310
+skip_gitignore = true
+line_length = 120
+multi_line_output = 3
+lines_after_imports = 2
+force_alphabetical_sort_within_sections = true
+profile = 'black'

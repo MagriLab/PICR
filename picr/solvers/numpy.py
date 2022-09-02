@@ -1,6 +1,5 @@
 import numpy as np
 import opt_einsum as oe
-
 from kolsol.numpy.solver import KolSol
 
 

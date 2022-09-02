@@ -3,6 +3,7 @@ from typing import Optional, Protocol, TypeVar
 import numpy as np
 import torch
 
+
 T = TypeVar('T', np.ndarray, torch.Tensor)
 
 

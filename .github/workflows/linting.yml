@@ -12,9 +12,9 @@ on:
 
 
 jobs:
-  
+
   linting:
-    
+
     runs-on: ubuntu-latest
     steps:
 
@@ -38,4 +38,3 @@ jobs:
 
       - name: Run pylint
         run: pylint ./picr
-

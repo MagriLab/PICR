@@ -3,32 +3,30 @@ import argparse
 import csv
 import functools as ft
 import operator
-
 import sys
-import tqdm
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, Union
 
-import h5py
-
 import einops
+import h5py
 import numpy as np
 import opt_einsum as oe
-
 import torch
+import tqdm
 from torch import nn
 from torch.utils.data import DataLoader
 
+
 sys.path.append('../..')
-from picr.model import Autoencoder
+import warnings
 
 from picr.corruption import get_corruption_fn
 from picr.experiments.data import generate_dataloader
-
+from picr.model import Autoencoder
 from picr.utils.config import ExperimentConfig
 from picr.utils.enums import eCorruption, eSolverFunction
 
-import warnings
+
 warnings.filterwarnings("ignore", category=UserWarning)
 
 
@@ -201,13 +199,13 @@ def inference(model: nn.Module,
     u_predictions = torch.zeros_like(data, device=torch.device('cpu'))
     phi_predictions = torch.zeros_like(data, device=torch.device('cpu'))
 
-    dataloader = generate_dataloader(data, batch_size, DEVICE_KWARGS) 
+    dataloader = generate_dataloader(data, batch_size, DEVICE_KWARGS)
 
     model.train(mode=False)
 
     msg = ' 01 :: Conducting inference on batches.'
     for idx, batch in enumerate(tqdm.tqdm(dataloader, total=len(dataloader), desc=msg)):
-        
+
         # conduct inference on the batch
         batch = batch.to(DEVICE)
 
@@ -279,7 +277,7 @@ def main(args: argparse.Namespace) -> None:
     # initialise model / optimizer
     model = initialise_model(config, args.model_path)
     model.to(torch.float)
-    
+
     # run inference
     inference_dict = inference(model, u_all, config.BATCH_SIZE, phi_fn)
 

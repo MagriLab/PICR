@@ -1,11 +1,9 @@
 import argparse
+import subprocess
+import time
+from multiprocessing import Pool, Queue
 from pathlib import Path
 from typing import List, NamedTuple, Optional
-
-import time
-import subprocess
-
-from multiprocessing import Pool, Queue
 
 import torch
 import yaml

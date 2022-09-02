@@ -7,6 +7,7 @@ import h5py
 import numpy as np
 import tqdm
 
+
 sys.path.append('../..')
 from picr.solvers.numpy import LinearCDS
 

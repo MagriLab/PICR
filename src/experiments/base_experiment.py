@@ -1,7 +1,6 @@
 import argparse
 import csv
 import functools as ft
-
 import sys
 from pathlib import Path
 from shutil import copyfile
@@ -17,18 +16,19 @@ from torch.utils.data import DataLoader
 from wandb.sdk.lib import RunDisabled
 from wandb.wandb_run import Run
 
+
 sys.path.append('../..')
-from picr.model import Autoencoder
-from picr.loss import get_loss_fn, PILoss
+import warnings
 
 from picr.corruption import get_corruption_fn
-from picr.experiments.data import load_data, train_validation_split, generate_dataloader
-
+from picr.experiments.data import generate_dataloader, load_data, train_validation_split
+from picr.loss import get_loss_fn, PILoss
+from picr.model import Autoencoder
 from picr.utils.config import ExperimentConfig
 from picr.utils.enums import eCorruption
 from picr.utils.loss_tracker import LossTracker
 
-import warnings
+
 warnings.filterwarnings("ignore", category=UserWarning)
 
 
@@ -231,7 +231,7 @@ def train_loop(model: nn.Module,
     Returns
     -------
     LossTracker
-        Loss tracking object to hold information about the training progress.    
+        Loss tracking object to hold information about the training progress.
     """
 
     # reset losses to zero
