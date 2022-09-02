@@ -1,7 +1,7 @@
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any, Dict, List, Union
 
-from dataclasses import dataclass, field, fields
 import yaml
 
 from .enums import eCorruption, eDecoder, eSolverFunction

@@ -5,7 +5,6 @@ from typing import Any, Dict
 import h5py
 import numpy as np
 import tqdm
-
 from kolsol.numpy.solver import KolSol
 
 

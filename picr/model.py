@@ -5,13 +5,13 @@ from torch import nn
 
 from .layers import (
     Crop,
-    TimeDistributedLinear,
-    TimeDistributedConv2d,
-    TimeDistributedConvTranspose2d,
-    TimeDistributedMaxPool2d,
     TimeDistributedBatchNorm1d,
     TimeDistributedBatchNorm2d,
-    TimeDistributedUpsamplingBilinear2d
+    TimeDistributedConv2d,
+    TimeDistributedConvTranspose2d,
+    TimeDistributedLinear,
+    TimeDistributedMaxPool2d,
+    TimeDistributedUpsamplingBilinear2d,
 )
 from .utils.checks import ValidateDimension
 from .utils.enums import eDecoder
@@ -80,7 +80,7 @@ class BaseEncoderDecoder(nn.Module):
         Parameters
         ----------
         x: torch.Tensor
-            Tensor to pass through the model.s
+            Tensor to pass through the model.
         """
 
         raise ValueError('Need to implement a sub-class.')

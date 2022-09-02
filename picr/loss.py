@@ -3,14 +3,13 @@ from typing import Protocol
 import einops
 import opt_einsum as oe
 import torch
-
 from kolsol.torch.solver import KolSol
 
-from .solvers.torch import LinearCDS, NonlinearCDS
 from .solvers.proto import Solver
+from .solvers.torch import LinearCDS, NonlinearCDS
 from .utils.checks import ValidateDimension
-from .utils.enums import eSolverFunction
 from .utils.config import ExperimentConfig
+from .utils.enums import eSolverFunction
 
 
 class PILoss(Protocol):
