@@ -40,7 +40,7 @@ The `./src/experiments/mp_*_experiment.py` handles the final two fields.
 ```text
 @inproceedings{Kelshaw2022,
   title = {Physics-Informed Convolutional Neural Networks for Corruption Removal on Dynamical Systems},
-  author = {Daniel Kelshaw and Georgios Rigas and Luca Magri},
+  author = {Daniel Kelshaw and Luca Magri},
   booktitle = {NeurIPS 2022 Workshop on Machine Learning and the Physical Sciences},
   year = {2022},
   url = {https://arxiv.org/abs/2210.16215}
