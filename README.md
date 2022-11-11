@@ -1,4 +1,3 @@
-# PICR
 [PICR :: Physics-Informed Convolutional Neural Networks for Corruption Removal on Dynamical System](https://arxiv.org/abs/2210.16215)
 =======
 **Authors:** Daniel Kelshaw, Luca Magri
