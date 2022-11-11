@@ -31,7 +31,8 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 
 # machine constants
-DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+# DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+DEVICE = torch.device('cpu')
 DEVICE_KWARGS = {'num_workers': 1, 'pin_memory': True} if DEVICE == 'cuda' else {}
 
 
