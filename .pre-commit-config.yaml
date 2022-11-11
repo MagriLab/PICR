@@ -13,19 +13,11 @@ repos:
       hooks:
       -   id: isort
 
-  -   repo: https://github.com/python-poetry/poetry
-      rev: 1.2.0
-      hooks:
-      -   id: poetry-check
-      -   id: poetry-lock
-      -   id: poetry-export
-          args: ['--with', 'dev', '-f', 'requirements.txt', '--output', 'requirements.txt', '--without-hashes']
-
   -   repo: local
       hooks:
       -   id: pylint
           name: pylint
-          entry: poetry run pylint ./picr
+          entry: pylint ./picr
           language: system
           pass_filenames: false
 
@@ -33,6 +25,6 @@ repos:
       hooks:
       -   id: mypy
           name: mypy
-          entry: poetry run mypy ./picr
+          entry: mypy ./picr
           language: system
           pass_filenames: false
