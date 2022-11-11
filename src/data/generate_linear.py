@@ -117,17 +117,17 @@ if __name__ == '__main__':
 
     # arguments to define output
     parser.add_argument('--data-path', type=Path, required=True)
-    parser.add_argument('--resolution', type=int, required=True)
+    parser.add_argument('--resolution', type=int, default=64)
 
     # arguments to define simulation
-    parser.add_argument('--c', type=float, required=True)
-    parser.add_argument('--re', type=float, required=True)
+    parser.add_argument('--c', type=float, default=1.0)
+    parser.add_argument('--re', type=float, default=500.0)
 
-    parser.add_argument('--dt', type=float, default=0.01)
+    parser.add_argument('--dt', type=float, default=0.005)
     parser.add_argument('--time-simulation', type=float, required=True)
 
     # arguments for LinearCDS
-    parser.add_argument('--nk', type=int, default=8)
+    parser.add_argument('--nk', type=int, default=30)
     parser.add_argument('--ndim', type=int, default=2)
 
     parsed_args = parser.parse_args()
