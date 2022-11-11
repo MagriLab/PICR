@@ -17,3 +17,5 @@ tmp_*
 *.DS_Store
 *.pt
 *.h5
+
+!src/postprocessing/produce_paper_results.ipynb
