@@ -66,8 +66,6 @@ def run_job(job: Job) -> None:
         for k in filter(lambda _k: wandb_dict[_k], wandb_dict := FLAGS.wandb):             # type: ignore
             cmd += f' --wandb.{k} {wandb_dict[k]}'
 
-        cmd += '--config.training.epochs 3'
-
         # define logging paths
         stdout_path = job.experiment_path / 'stdout.log'
         stderr_path = job.experiment_path / 'stderr.log'
