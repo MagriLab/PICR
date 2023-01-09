@@ -1,47 +1,84 @@
-import argparse
 import csv
 import functools as ft
-import sys
+import warnings
 from pathlib import Path
-from shutil import copyfile
-from typing import Callable, Dict, NamedTuple, Optional, Union
+from typing import Callable, Dict, Optional
 
 import einops
 import numpy as np
 import opt_einsum as oe
 import torch
-import wandb
+import torch.backends.cudnn
+from absl import app, flags
+from ml_collections import config_flags
 from torch import nn
 from torch.utils.data import DataLoader
 from wandb.sdk.lib import RunDisabled
 from wandb.wandb_run import Run
 
+import wandb
 
-sys.path.append('../..')
-import warnings
-
-from picr.corruption import get_corruption_fn
-from picr.experiments.data import generate_dataloader, load_data, train_validation_split
-from picr.loss import get_loss_fn, PILoss
-from picr.model import Autoencoder
-from picr.utils.config import ExperimentConfig
-from picr.utils.enums import eCorruption
-from picr.utils.loss_tracker import LossTracker
+from ..picr.corruption import get_corruption_fn
+from ..picr.data import generate_dataloader, load_data, train_validation_split
+from ..picr.experimental import define_path as picr_flags
+from ..picr.loss import get_loss_fn, PILoss
+from ..picr.model import BottleneckCNN
+from ..picr.utils.enums import eCorruption
+from ..picr.utils.loss_tracker import LossTracker
+from ..picr.utils.types import ExperimentConfig
+from .configs.wandb import WANDB_CONFIG
 
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
 
+FLAGS = flags.FLAGS
+
+_CONFIG = config_flags.DEFINE_config_file('config')
+_WANBD_CONFIG = config_flags.DEFINE_config_dict('wandb', WANDB_CONFIG)
+
+_EXPERIMENT_PATH = picr_flags.DEFINE_path(
+    'experiment_path',
+    None,
+    'Directory to store experiment results'
+)
+
+_DATA_PATH = picr_flags.DEFINE_path(
+    'data_path',
+    None,
+    'Path to .h5 file storing the data.'
+)
+
+_GPU = flags.DEFINE_integer(
+    'run_gpu',
+    0,
+    'Which GPU to run on.'
+)
+
+_MEMORY_FRACTION = flags.DEFINE_float(
+    'memory_fraction',
+    None,
+    'Memory fraction of GPU to use.'
+)
+
+_LOG_FREQUENCY = flags.DEFINE_integer(
+    'log_frequency',
+    1,
+    'Frequency at which to log results.'
+)
+
+_CUDNN_BENCHMARKS = flags.DEFINE_boolean(
+    'cudnn_benchmarks',
+    True,
+    'Whether to use CUDNN benchmarks or not.'
+)
+
+flags.mark_flags_as_required(['config', 'experiment_path', 'data_path'])
+
+
 # machine constants
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 DEVICE_KWARGS = {'num_workers': 1, 'pin_memory': True} if DEVICE == 'cuda' else {}
-
-
-class WandbConfig(NamedTuple):
-
-    entity: Optional[str]
-    project: Optional[str]
-    group: Optional[str]
 
 
 def initialise_csv(csv_path: Path) -> None:
@@ -60,82 +97,53 @@ def initialise_csv(csv_path: Path) -> None:
         writer.writerow(['epoch', *lt.get_fields(training=True), *lt.get_fields(training=False)])
 
 
-def initialise_wandb(wandb_config: WandbConfig,
-                     config: ExperimentConfig,
-                     experiment_path: Path,
-                     log_code: bool) -> Union[Run, RunDisabled, None]:
+def initialise_wandb() -> Optional[Run | RunDisabled]:
 
-    """Initialise the Weights and Biases API.
-
-    Parameters
-    ----------
-    wandb_config: WandbConfig
-        Arguments for Weights and Biases.
-    config: ExperimentConfig
-        Configuration used to run the experiment.
-    experiment_path: Path
-        Path for the experiment -- location of code to copy
-    log_code: bool
-        Whether to save a copy of the code to Weights and Biases.
-    """
+    """Initialise the Weights and Biases API."""
 
     wandb_run = None
-    if wandb_config.entity:
+
+    wandb_config = FLAGS.wandb
+    experiment_name = wandb_config.name or str(FLAGS.experiment_path)
+
+    tags = wandb_config.tags
+    if tags:
+        tags = tags.split(':')
+
+    # provide a better check for wandb_run
+    if wandb_config.entity and wandb_config.project:
 
         # initialise W&B API
         wandb_run = wandb.init(
-            config=config.config,
+            config=FLAGS.config.to_dict(),
             entity=wandb_config.entity,
             project=wandb_config.project,
+            name=experiment_name,
             group=wandb_config.group,
-            name=str(experiment_path)
+            tags=tags,
+            job_type=wandb_config.job_type,
+            notes=wandb_config.notes
         )
 
     # log current code state to W&B
-    if log_code and isinstance(wandb_run, Run):
-        wandb_run.log_code(str(Path.cwd()))
+    if wandb_run:
+        wandb_run.log_code('./src')
 
     return wandb_run
 
 
-def initialise_model(config: ExperimentConfig, model_path: Optional[Path] = None) -> nn.Module:
+def initialise_model() -> nn.Module:
 
-    """Iniitalise CNN Model for experiment.
-
-    Parameters
-    ----------
-    config: ExperimentConfig
-        Parameters to use for the experiment.
-    model_path: Optional[Path]
-        Optional model to load.
-
-    Returns
-    -------
-    model: nn.Module
-        Initialised model.
-    """
-
-    # get activation function
-    activation_fn = getattr(nn, config.ACTIVATION)()
+    config = FLAGS.config
 
     # initialise model
-    model = Autoencoder(
-        nx=config.NX,
-        nc=config.NU,
-        layers=config.LAYERS,
-        latent_dim=config.LATENT_DIM,
-        decoder=config.DECODER,
-        activation=activation_fn,
-        dropout=config.DROPOUT,
-        batch_norm=config.BATCH_NORM
+    model = BottleneckCNN(
+        nx=config.data.resolution,
+        nc=2,
+        layers=config.training.layers,
+        latent_dim=config.training.latent_dim,
+        decoder=config.training.decoder,
     )
-
-    # load model from file if applicable.
-    if model_path:
-        model.load_state_dict(torch.load(model_path, map_location=DEVICE))
-
-    model.to(torch.double)
-    model.to(DEVICE)
 
     return model
 
@@ -201,7 +209,6 @@ def get_boundaries(arr: torch.Tensor) -> torch.Tensor:
 def train_loop(model: nn.Module,
                dataloader: DataLoader,
                loss_fn: PILoss,
-               simulation_dt: float,
                phi_fn: Callable[[], torch.Tensor],
                optimizer: Optional[torch.optim.Optimizer] = None,
                s_lambda: float = 1e3,
@@ -217,8 +224,6 @@ def train_loop(model: nn.Module,
         Generator to retrieve data for evaluation from.
     loss_fn: PILoss
         Loss function for calculating physics-informed aspect of the loss.
-    simulation_dt: float
-        Size of the time-step used in the simulation data.
     phi_fn: ft.partial
         Function used to generate the required corruption field.
     optimizer: Optional[torch.optim.Optimizer]
@@ -238,7 +243,7 @@ def train_loop(model: nn.Module,
     batched_residual_loss = (0.0 + 0.0j)
     batched_boundary_loss = (0.0 + 0.0j)
 
-    batched_phi_dot_loss = (0.0 + 0.0j)
+    batched_phi_dt_loss = (0.0 + 0.0j)
     batched_phi_mean_loss = (0.0 + 0.0j)
 
     batched_total_loss = (0.0 + 0.0j)
@@ -264,55 +269,47 @@ def train_loop(model: nn.Module,
         # LOSS :: 01 :: Clean Velocity Field :: || R(\hat{u}) ||
         r_u_loss = loss_fn.calc_residual_loss(u_prediction)
 
-        # LOSS :: 02 :: Constraint Loss :: || C(\hat{u}) ||
-        c_u_loss = torch.zeros_like(r_u_loss)
-        if loss_fn.constraints:
-            c_u_loss = loss_fn.calc_constraint_loss(u_prediction)
-
-        # LOSS :: 03 :: Boundary Loss :: || \hat{u_b} - u_b ||
+        # LOSS :: 02 :: Boundary Loss :: || \hat{u_b} - u_b ||
         u_boundaries = get_boundaries(data)
         u_prediction_boundaries = get_boundaries(u_prediction)
 
-        boundary_loss = oe.contract('... -> ', (u_boundaries - u_prediction_boundaries) ** 2) / u_boundaries.numel()
-        boundary_loss *= s_lambda
+        boundary_loss = torch.mean((u_boundaries - u_prediction_boundaries) ** 2)
 
-        # LOSS :: 04 :: Stationary Corruption :: || \partial_t \hat{\phi} ||
-        dphi_dt = (1.0 / simulation_dt) * (phi_prediction[:, 1:, ...] - phi_prediction[:, :-1, ...])
-        dphi_dt = oe.contract('... -> ', dphi_dt ** 2) / dphi_dt.numel()
-        dphi_dt *= s_lambda
+        # LOSS :: 03 :: Stationary Corruption :: || \partial_t \hat{\phi} ||
+        dphi_dt = (1.0 / FLAGS.config.simulation.dt) * (phi_prediction[:, 1:, ...] - phi_prediction[:, :-1, ...])
+        dphi_dt_loss = torch.mean(dphi_dt ** 2)
 
-        # LOSS :: 05 :: Mean Corruption :: || \hat{\phi} - <\hat{\phi}> ||
-        r_phi = phi_prediction - einops.reduce(phi_prediction, 'b t u i j -> i j', torch.mean)
-        mean_phi_loss = oe.contract('... -> ', r_phi ** 2) / r_phi.numel()
+        # LOSS :: 04 :: Mean Corruption :: || \hat{\phi} - <\hat{\phi}> ||
+        mean_phi_loss = torch.mean((phi_prediction - einops.reduce(phi_prediction, 'b t u i j -> i j', torch.mean)) ** 2)
 
-        mean_phi_loss *= s_lambda
+        # LOSS :: 05 :: Total Loss
+        total_loss = r_u_loss + s_lambda * (boundary_loss + dphi_dt_loss + mean_phi_loss)
 
-        # LOSS :: 06 :: Total Loss
-        total_loss = r_u_loss + boundary_loss + dphi_dt + mean_phi_loss + loss_fn.constraints * c_u_loss
-
-        # LOSS :: 07 :: u, \phi -- Clean
+        # LOSS :: 06 :: u, \phi -- Clean
         clean_u_loss = torch.sqrt(torch.sum((data - u_prediction) ** 2) / torch.sum(data ** 2))
         clean_phi_loss = torch.sqrt(torch.sum((phi - phi_prediction) ** 2) / torch.sum(phi ** 2))
 
         # update batch losses
         batched_residual_loss += r_u_loss.item() * data.size(0)
         batched_boundary_loss += boundary_loss.item() * data.size(0)
-        batched_phi_dot_loss += dphi_dt.item() * data.size(0)
-        batched_phi_mean_loss += dphi_dt.item() * data.size(0)
+        batched_phi_dt_loss += dphi_dt_loss.item() * data.size(0)
+        batched_phi_mean_loss += mean_phi_loss.item() * data.size(0)
         batched_total_loss += total_loss.item() * data.size(0)
         batched_clean_u_loss += clean_u_loss.item() * data.size(0)
         batched_clean_phi_loss += clean_phi_loss.item() * data.size(0)
 
         # update gradients
         if set_train and optimizer:
-            optimizer.zero_grad()
+
+            optimizer.zero_grad(set_to_none=True)
+
             total_loss.backward()
             optimizer.step()
 
     # normalise and find absolute value
     batched_residual_loss = float(abs(batched_residual_loss)) / len(dataloader.dataset)                   # type: ignore
     batched_boundary_loss = float(abs(batched_boundary_loss)) / len(dataloader.dataset)                   # type: ignore
-    batched_phi_dot_loss = float(abs(batched_phi_dot_loss)) / len(dataloader.dataset)                     # type: ignore
+    batched_phi_dt_loss = float(abs(batched_phi_dt_loss)) / len(dataloader.dataset)                     # type: ignore
     batched_phi_mean_loss = float(abs(batched_phi_mean_loss)) / len(dataloader.dataset)                   # type: ignore
     batched_total_loss = float(abs(batched_total_loss)) / len(dataloader.dataset)                         # type: ignore
     batched_clean_u_loss = float(abs(batched_clean_u_loss)) / len(dataloader.dataset)                     # type: ignore
@@ -321,7 +318,7 @@ def train_loop(model: nn.Module,
     loss_dict: Dict[str, float] = {
         'residual_loss': batched_residual_loss,
         'boundary_loss': batched_boundary_loss,
-        'phi_dot_loss': batched_phi_dot_loss,
+        'phi_dot_loss': batched_phi_dt_loss,
         'phi_mean_loss': batched_phi_mean_loss,
         'total_loss': batched_total_loss,
         'clean_u_loss': batched_clean_u_loss,
@@ -331,17 +328,9 @@ def train_loop(model: nn.Module,
     return LossTracker(**loss_dict)
 
 
-def main(args: argparse.Namespace) -> None:
+def main(_) -> None:
 
-    """Run the Experiment.
-
-    Parameters
-    ----------
-    args: argparse.Namespace
-        Command-line arguments to dictate experiment run.
-    """
-
-    if args.run_gpu is not None and args.run_gpu >= 0 and args.run_gpu < torch.cuda.device_count():
+    if FLAGS.run_gpu is not None and FLAGS.run_gpu >= 0 and FLAGS.run_gpu < torch.cuda.device_count():
 
         global DEVICE
         global DEVICE_KWARGS
@@ -349,60 +338,69 @@ def main(args: argparse.Namespace) -> None:
         if not torch.cuda.is_available():
             raise ValueError('Specified CUDA device unavailable.')
 
-        DEVICE = torch.device(f'cuda:{args.run_gpu}')
+        DEVICE = torch.device(f'cuda:{FLAGS.run_gpu}')
         DEVICE_KWARGS = {'num_workers': 1, 'pin_memory': True}
 
-    if args.memory_fraction:
-        torch.cuda.set_per_process_memory_fraction(args.memory_fraction, DEVICE)
+        torch.backends.cudnn.benchmark = FLAGS.cudnn_benchmarks
 
-    # load yaml configuration file
-    config = ExperimentConfig()
-    config.load_config(args.config_path)
+    if FLAGS.memory_fraction:
+        torch.cuda.set_per_process_memory_fraction(FLAGS.memory_fraction, DEVICE)
+
+    # easy access to config
+    config: ExperimentConfig = FLAGS.config
 
     # initialise weights and biases
-    wandb_config = WandbConfig(entity=args.wandb_entity, project=args.wandb_project, group=args.wandb_group)
-    wandb_run = initialise_wandb(wandb_config, config, args.experiment_path, log_code=True)
+    wandb_run = initialise_wandb()
 
-    # setup the experiment path and copy config file
-    args.experiment_path.mkdir(parents=True, exist_ok=True)
-    copyfile(args.config_path, args.experiment_path / 'config.yml')
+    # setup the experiment path
+    FLAGS.experiment_path.mkdir(parents=True, exist_ok=True)
+
+    # save config to yaml
+    with open(FLAGS.experiment_path / 'config.yml', 'w') as f:
+        config.to_yaml(stream=f)
 
     # initialise csv
-    csv_path = args.experiment_path / 'results.csv'
+    csv_path = FLAGS.experiment_path / 'results.csv'
     initialise_csv(csv_path)
 
     # load data
-    u_all: torch.Tensor = load_data(h5_file=args.data_path, config=config).to(torch.float)
-    train_u, validation_u = train_validation_split(u_all, config.NTRAIN, config.NVALIDATION, step=config.TIME_STACK)
+    u_all = load_data(h5_file=FLAGS.data_path, config=config)
+    train_u, validation_u = train_validation_split(u_all, config.data.ntrain, config.data.nvalidation, step=config.data.tau)
 
-    train_loader: DataLoader = generate_dataloader(train_u, config.BATCH_SIZE, DEVICE_KWARGS)
-    validation_loader: DataLoader = generate_dataloader(validation_u, config.BATCH_SIZE, DEVICE_KWARGS)
+    # set `drop_last = True` if using: `torch.backends.cudnn.benchmark = True`
+    dataloader_kwargs = dict(shuffle=True, drop_last=FLAGS.cudnn_benchmarks)
+
+    train_loader = generate_dataloader(train_u, config.training.batch_size, dataloader_kwargs, DEVICE_KWARGS)
+    validation_loader = generate_dataloader(validation_u, config.training.batch_size, dataloader_kwargs, DEVICE_KWARGS)
 
     # get corruption function and loss function
-    u_max: float = torch.max(u_all).item()
-    phi_limit = config.PHI_LIMIT * u_max
+    u_max = torch.max(u_all).item()
+    phi_limit = config.corruption.phi_magnitude * u_max
 
-    phi_fn: ft.partial = set_corruption_fn(config.PHI_FN, config.NX, config.PHI_FREQ, phi_limit)
-    loss_fn: PILoss = get_loss_fn(config, DEVICE)
+    phi_fn = set_corruption_fn(
+        config.corruption.phi_fn,
+        config.data.resolution,
+        config.corruption.phi_frequency,
+        phi_limit
+    )
 
-    # empirical observations suggest this works better without constraints
-    loss_fn.constraints = False
+    loss_fn = get_loss_fn(config, DEVICE)
 
     # initialise model / optimizer
-    model = initialise_model(config, args.model_path)
-    model.to(torch.float)
+    model = initialise_model().to(torch.float)
+    model.to(DEVICE)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=config.LR, weight_decay=config.L2)
+    optimizer = torch.optim.Adam(model.parameters(), lr=config.training.learning_rate, weight_decay=config.training.l2)
 
     # generate training functions
-    _loop_params = dict(model=model, loss_fn=loss_fn, simulation_dt=config.DT, phi_fn=phi_fn)
+    _loop_params = dict(model=model, loss_fn=loss_fn, phi_fn=phi_fn)
 
     train_fn = ft.partial(train_loop, **_loop_params, dataloader=train_loader, optimizer=optimizer, set_train=True)
     validation_fn = ft.partial(train_loop, **_loop_params, dataloader=validation_loader, set_train=False)
 
     # main training loop
     min_validation_loss = np.Inf
-    for epoch in range(config.N_EPOCHS):
+    for epoch in range(config.training.epochs):
 
         lt_training: LossTracker = train_fn()
         lt_validation: LossTracker = validation_fn()
@@ -410,7 +408,7 @@ def main(args: argparse.Namespace) -> None:
         # update global validation loss if model improves
         if lt_validation.total_loss < min_validation_loss:
             min_validation_loss = lt_validation.total_loss
-            torch.save(model.state_dict(), args.experiment_path / 'autoencoder.pt')
+            torch.save(model.state_dict(), FLAGS.experiment_path / 'autoencoder.pt')
 
         # log results to weights and biases
         if isinstance(wandb_run, Run):
@@ -422,7 +420,7 @@ def main(args: argparse.Namespace) -> None:
         for k, v in lt_training.get_dict(training=True).items():
             msg += f' | {k}: {v:08.5e}'
 
-        if epoch % args.log_freq == 0:
+        if epoch % FLAGS.log_frequency == 0:
             print(msg)
 
         # write new results to .csv file
@@ -433,35 +431,11 @@ def main(args: argparse.Namespace) -> None:
 
     # upload results to weights and biases
     if isinstance(wandb_run, Run):
-        artifact = wandb.Artifact(name=str(args.experiment_path).replace('/', '.'), type='dataset')
-        artifact.add_dir(local_path=str(args.experiment_path))
+        artifact = wandb.Artifact(name=str(FLAGS.experiment_path).replace('/', '.'), type='dataset')
+        artifact.add_dir(local_path=str(FLAGS.experiment_path))
 
         wandb_run.log_artifact(artifact_or_path=artifact)
 
 
 if __name__ == '__main__':
-
-    # read arguments from command line
-    parser = argparse.ArgumentParser(description='PICR :: Physics-Informed Corruption Removal Experiment.')
-
-    # arguments to define paths for experiment run
-    parser.add_argument('-ep', '--experiment-path', type=Path, required=True)
-    parser.add_argument('-dp', '--data-path', type=Path, required=True)
-    parser.add_argument('-cp', '--config-path', type=Path, required=True)
-
-    # argument to define optional path to load pre-trained model
-    parser.add_argument('-mp', '--model-path', type=Path, required=False)
-
-    parser.add_argument('-gpu', '--run-gpu', type=int, required=False)
-    parser.add_argument('-mf', '--memory-fraction', type=float, required=False)
-
-    parser.add_argument('-lf', '--log-freq', type=int, required=False, default=5)
-
-    # arguments to define wandb parameters
-    parser.add_argument('--wandb-entity', default=None, type=str)
-    parser.add_argument('--wandb-project', default=None, type=str)
-    parser.add_argument('--wandb-group', default=None, type=str)
-
-    parsed_args = parser.parse_args()
-
-    main(parsed_args)
+    app.run(main)

@@ -9,11 +9,7 @@ T = TypeVar('T', np.ndarray, torch.Tensor)
 
 class Solver(Protocol[T]):
 
-    nk: int
-    kk: T
     nabla: T
-
-    ndim: int
 
     def dynamics(self, u_hat: T) -> T:
         """dynamics"""
@@ -23,3 +19,6 @@ class Solver(Protocol[T]):
 
     def fourier_to_phys(self, t_hat: T, nref: Optional[int]) -> T:
         """fourier_to_phys"""
+
+    def random_field(self, magnitude: float, sigma: float) -> T:
+        """random_field"""

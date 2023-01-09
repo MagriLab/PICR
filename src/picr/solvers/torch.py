@@ -30,7 +30,7 @@ class LinearCDS(KolSol):
             Device on which to run solver.
         """
 
-        super().__init__(nk=nk, nf=0.0, re=re, ndim=ndim, device=device)
+        super().__init__(nk=nk, nf=0, re=re, ndim=ndim, device=device)
 
         self.c = c
         self.nu = 1.0 / self.re
@@ -94,7 +94,7 @@ class NonlinearCDS(KolSol):
             Device on which to run solver.
         """
 
-        super().__init__(nk=nk, nf=0.0, re=re, ndim=ndim, device=device)
+        super().__init__(nk=nk, nf=0, re=re, ndim=ndim, device=device)
 
         self.nu = 1.0 / self.re
 

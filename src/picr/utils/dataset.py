@@ -17,7 +17,7 @@ class UnlabeledTensorDataset(TensorDataset):
         super().__init__()
         self.data_tensor = data_tensor
 
-    def __getitem__(self, idx: int) -> torch.Tensor:                                                      # type: ignore
+    def __getitem__(self, idx: int) -> torch.Tensor:
         return self.data_tensor[idx]
 
     def __len__(self) -> int:
