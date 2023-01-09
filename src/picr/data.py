@@ -1,16 +1,16 @@
 import operator
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any, Tuple
 
 import einops
 import h5py
 import numpy as np
 import torch
+from kolsol.numpy.solver import KolSol
 from torch.utils.data import DataLoader
 
-from ..utils.config import ExperimentConfig
-from ..utils.dataset import UnlabeledTensorDataset
-from ..utils.enums import eSolverFunction
+from .utils.dataset import UnlabeledTensorDataset
+from .utils.types import ExperimentConfig
 
 
 def load_data(h5_file: Path, config: ExperimentConfig) -> torch.Tensor:
@@ -23,7 +23,6 @@ def load_data(h5_file: Path, config: ExperimentConfig) -> torch.Tensor:
         Path to the .h5 file containing simulation data.
     config: ExperimentConfig
         Configuration object holding key information about simulation.
-
     Returns
     -------
     u_all: torch.Tensor
@@ -31,33 +30,22 @@ def load_data(h5_file: Path, config: ExperimentConfig) -> torch.Tensor:
     """
 
     with h5py.File(h5_file, 'r') as hf:
+        u_all_hat = np.array(hf.get('velocity_field_hat'))
 
-        # check configuration matches given simulation file
-        config_mismatch = []
-        for x, config_x in zip(['re', 'nk', 'dt', 'resolution', 'ndim'], [config.RE, config.NK, config.DT, config.NX, config.NU]):
-            if np.array(hf.get(x)) != np.array(config_x):
-                config_mismatch.append(x)
-
-        if config.SOLVER_FN == eSolverFunction.LINEAR:
-            if np.array(hf.get('c')) != np.array(config.C):
-                config_mismatch.append('c')
-
-        if config_mismatch:
-            raise ValueError(f'Configuration does not match simulation: {config_mismatch}')
-
-        # load data from h5 file
-        u_all = np.array(hf.get('velocity_field'))
+    # convert to physical domain - using KolSol here for convenience as it does not matter
+    ks = KolSol(nk=config.simulation.nk, nf=4, re=config.simulation.re, ndim=2) # TODO :: Should not use re here.
+    u_all = ks.fourier_to_phys(u_all_hat, nref=config.data.resolution)
 
     # stack N consecutive time-steps in a new dimension
     list_u = []
-    for i, j in zip(range(config.TIME_STACK), map(operator.neg, reversed(range(config.TIME_STACK)))):
+    for i, j in zip(range(config.data.tau), map(operator.neg, reversed(range(config.data.tau)))):
         sl = slice(i, j) if j < 0 else slice(i, None)
         list_u.append(u_all[sl])
 
     u_all = np.stack(list_u, axis=1)
 
     u_all = einops.rearrange(u_all, 'b t i j u -> b t u i j')
-    u_tensor_all = torch.from_numpy(u_all).to(torch.double)
+    u_tensor_all = torch.from_numpy(u_all).to(torch.float)
 
     return u_tensor_all
 
@@ -129,7 +117,10 @@ def train_validation_split(data: torch.Tensor,
     return d_train, d_validation
 
 
-def generate_dataloader(data: torch.Tensor, batch_size: int, device_kwargs: Dict[str, Any]) -> DataLoader:
+def generate_dataloader(data: torch.Tensor,
+                        batch_size: int,
+                        dataloader_kwargs: dict[str, Any],
+                        device_kwargs: dict[str, Any]) -> DataLoader:
 
     """Generate DataLoader from given data.
 
@@ -139,6 +130,8 @@ def generate_dataloader(data: torch.Tensor, batch_size: int, device_kwargs: Dict
         Data to generate DataLoader from.
     batch_size: int
         Number of items per batch.
+    dataloader_kwargs: dict[str, Any]
+        Kwargs for the dataloader.
     device_kwargs: Dict[str, Any]
         Kwargs for the device.
 
@@ -149,6 +142,6 @@ def generate_dataloader(data: torch.Tensor, batch_size: int, device_kwargs: Dict
     """
 
     dataset = UnlabeledTensorDataset(data)
-    dataloader = DataLoader(dataset, batch_size=batch_size, **device_kwargs)
+    dataloader = DataLoader(dataset, batch_size=batch_size, **dataloader_kwargs, **device_kwargs)
 
     return dataloader

@@ -25,13 +25,16 @@ def get_corruption_fn(e_corruption: eCorruption) -> Callable[[T, float, float], 
         Corruption function.
     """
 
-    if e_corruption == eCorruption.ACKLEY:
-        return ackley
+    match e_corruption:
 
-    if e_corruption == eCorruption.RASTRIGIN:
-        return rastrigin
+        case eCorruption.ackley:
+            return ackley
 
-    raise ValueError('Incompatible corruption function...')
+        case eCorruption.rastrigin:
+            return rastrigin
+
+        case _:
+            raise ValueError('Incompatible corruption function.')
 
 
 @ValidateDimension(ndim=3)

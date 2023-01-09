@@ -39,7 +39,7 @@ class ValidateDimension:
         def _fn(*args: Any, **kwargs: Any) -> Callable[..., Any]:
 
             arg_chain = it.chain(args, kwargs.values())
-            if not any(map(lambda _arg: isinstance(_arg, TypeTensor.__args__), arg_chain)):               # type: ignore
+            if not any(map(lambda _arg: isinstance(_arg, TypeTensor), arg_chain)):
                 raise DimensionWarning('No arguments with dimensions to check')
 
             for arg in arg_chain:

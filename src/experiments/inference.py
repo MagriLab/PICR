@@ -1,38 +1,28 @@
-
 import argparse
-import csv
 import functools as ft
-import operator
-import sys
+import warnings
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Dict
 
 import einops
 import h5py
 import numpy as np
-import opt_einsum as oe
 import torch
 import tqdm
 from torch import nn
-from torch.utils.data import DataLoader
 
-
-sys.path.append('../..')
-import warnings
-
-from picr.corruption import get_corruption_fn
-from picr.experiments.data import generate_dataloader
-from picr.model import Autoencoder
-from picr.utils.config import ExperimentConfig
-from picr.utils.enums import eCorruption, eSolverFunction
+from ..picr.corruption import get_corruption_fn
+from ..picr.experiments.data import generate_dataloader
+from ..picr.model import BottleneckCNN
+from ..picr.utils.config import ExperimentConfig
+from ..picr.utils.enums import eCorruption, eSystem
 
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
 
 # machine constants
-# DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-DEVICE = torch.device('cpu')
+DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 DEVICE_KWARGS = {'num_workers': 1, 'pin_memory': True} if DEVICE == 'cuda' else {}
 
 
@@ -61,7 +51,7 @@ def load_data(h5_file: Path, config: ExperimentConfig) -> torch.Tensor:
             if np.array(hf.get(x)) != np.array(config_x):
                 config_mismatch.append(x)
 
-        if config.SOLVER_FN == eSolverFunction.LINEAR:
+        if config.SOLVER_FN == eSystem.linear:
             if np.array(hf.get('c')) != np.array(config.C):
                 config_mismatch.append('c')
 
@@ -132,7 +122,7 @@ def initialise_model(config: ExperimentConfig, model_path: Path) -> nn.Module:
     activation_fn = getattr(nn, config.ACTIVATION)()
 
     # initialise model
-    model = Autoencoder(
+    model = BottleneckCNN(
         nx=config.NX,
         nc=config.NU,
         layers=config.LAYERS,

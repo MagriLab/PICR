@@ -5,8 +5,6 @@ from torch import nn
 
 from .layers import (
     Crop,
-    TimeDistributedBatchNorm1d,
-    TimeDistributedBatchNorm2d,
     TimeDistributedConv2d,
     TimeDistributedConvTranspose2d,
     TimeDistributedLinear,
@@ -23,10 +21,7 @@ class BaseEncoderDecoder(nn.Module):
                  nx: int,
                  nc: int,
                  layers: List[int],
-                 latent_dim: int,
-                 activation: nn.Module = nn.Tanh(),
-                 dropout: float = 0.0,
-                 batch_norm: bool = False) -> None:
+                 latent_dim: int) -> None:
 
         """Base class for Encoder / Decoder
 
@@ -40,12 +35,6 @@ class BaseEncoderDecoder(nn.Module):
             List of layer sizes to use in the encoder / decoder.
         latent_dim: int
             Size of the latent space.
-        activation: nn.Module
-            Activation to use for the network.
-        dropout: float
-            Dropout rate for training.
-        batch_norm: bool
-            Flag to determine whether to use BatchNormalisation.
         """
 
         super().__init__()
@@ -57,9 +46,8 @@ class BaseEncoderDecoder(nn.Module):
         self.nc = nc
         self.layers = layers
         self.latent_dim = latent_dim
-        self.activation = activation
-        self.dropout = dropout
-        self.batch_norm = batch_norm
+
+        self.activation = nn.Tanh()
 
         # specify dimensions for each layer
         self.dims = (self.nc, *self.layers)
@@ -86,17 +74,14 @@ class BaseEncoderDecoder(nn.Module):
         raise ValueError('Need to implement a sub-class.')
 
 
-class Autoencoder(BaseEncoderDecoder):
+class BottleneckCNN(BaseEncoderDecoder):
 
     def __init__(self,
                  nx: int,
                  nc: int,
                  layers: List[int],
                  latent_dim: int,
-                 decoder: eDecoder = eDecoder.UPSAMPLING,
-                 activation: nn.Module = nn.Tanh(),
-                 dropout: float = 0.0,
-                 batch_norm: bool = False) -> None:
+                 decoder: eDecoder = eDecoder.upsampling) -> None:
 
         """Autoencoder class.
 
@@ -112,28 +97,22 @@ class Autoencoder(BaseEncoderDecoder):
             Size of the latent space.
         decoder: eDecoder
             Type of decoder to use, i.e: UpsamplingDecoder, TransposeDecoder.
-        activation: nn.Module
-            Activation to use for the network.
-        dropout: float
-            Dropout rate for training.
-        batch_norm: bool
-            Flag to determine whether to use BatchNormalisation.
         """
 
-        super().__init__(nx, nc, layers, latent_dim, activation, dropout, batch_norm)
+        super().__init__(nx, nc, layers, latent_dim)
 
         if not isinstance(decoder, eDecoder):
             raise TypeError('Must provide an eDecoder instance.')
 
         # define encoder
-        self.encoder = Encoder(nx, nc, layers, latent_dim, activation, dropout, batch_norm)
+        self.encoder = Encoder(nx, nc, layers, latent_dim)
 
         # define decoder
         self.decoder: Union[UpsamplingDecoder, TransposeDecoder]
-        if decoder == eDecoder.UPSAMPLING:
-            self.decoder = UpsamplingDecoder(nx, nc, layers, latent_dim, activation, dropout, batch_norm)
-        elif decoder == eDecoder.TRANSPOSE:
-            self.decoder = TransposeDecoder(nx, nc, layers, latent_dim, activation, dropout, batch_norm)
+        if decoder == eDecoder.upsampling:
+            self.decoder = UpsamplingDecoder(nx, nc, layers, latent_dim)
+        elif decoder == eDecoder.transpose:
+            self.decoder = TransposeDecoder(nx, nc, layers, latent_dim)
         else:
             raise ValueError('Invalid eDecoder instance given.')
 
@@ -165,10 +144,7 @@ class Encoder(BaseEncoderDecoder):
                  nx: int,
                  nc: int,
                  layers: List[int],
-                 latent_dim: int,
-                 activation: nn.Module = nn.Tanh(),
-                 dropout: float = 0.0,
-                 batch_norm: bool = False) -> None:
+                 latent_dim: int) -> None:
 
         """Encoder class.
 
@@ -182,15 +158,9 @@ class Encoder(BaseEncoderDecoder):
             List of layer sizes to use in the encoder / decoder.
         latent_dim: int
             Size of the latent space.
-        activation: nn.Module
-            Activation to use for the network.
-        dropout: float
-            Dropout rate for training.
-        batch_norm: bool
-            Flag to determine whether to use BatchNormalisation.
         """
 
-        super().__init__(nx, nc, layers, latent_dim, activation, dropout, batch_norm)
+        super().__init__(nx, nc, layers, latent_dim)
 
         # define convolutional architecture
         encoder_layers: List[nn.Module] = []
@@ -213,11 +183,6 @@ class Encoder(BaseEncoderDecoder):
             encoder_layers.append(self.activation)
             encoder_layers.append(TimeDistributedMaxPool2d(kernel_size=(2, 2)))
 
-            if self.batch_norm:
-                encoder_layers.append(TimeDistributedBatchNorm2d(self.dims[i + 1]))
-            if self.dropout > 0.0:
-                encoder_layers.append(nn.Dropout(self.dropout, inplace=True))
-
         # define linear architecture -- transformation to latent space
         linear_layers: List[nn.Module] = []
         if self.latent_dim > 0:
@@ -227,11 +192,6 @@ class Encoder(BaseEncoderDecoder):
                 TimeDistributedLinear(self.prelatent_shape, self.latent_dim),
                 self.activation,
             ])
-
-            if self.batch_norm:
-                linear_layers.append(TimeDistributedBatchNorm1d(self.latent_dim))
-            if self.dropout > 0.0:
-                linear_layers.append(nn.Dropout(self.dropout, inplace=True))
 
         # produce sequential operation for the module layers
         self.module_layers: nn.Module = nn.Sequential(*encoder_layers, *linear_layers)
@@ -261,10 +221,7 @@ class UpsamplingDecoder(BaseEncoderDecoder):
                  nx: int,
                  nc: int,
                  layers: List[int],
-                 latent_dim: int,
-                 activation: nn.Module = nn.Tanh(),
-                 dropout: float = 0.0,
-                 batch_norm: bool = False) -> None:
+                 latent_dim: int) -> None:
 
         """Decoder class with Upsampling.
 
@@ -278,15 +235,9 @@ class UpsamplingDecoder(BaseEncoderDecoder):
             List of layer sizes to use in the encoder / decoder.
         latent_dim: int
             Size of the latent space.
-        activation: nn.Module
-            Activation to use for the network.
-        dropout: float
-            Dropout rate for training.
-        batch_norm: bool
-            Flag to determine whether to use BatchNormalisation.
         """
 
-        super().__init__(nx, nc, layers, latent_dim, activation, dropout, batch_norm)
+        super().__init__(nx, nc, layers, latent_dim)
 
         # define convolutional architecture
         decoder_layers: List[nn.Module] = []
@@ -315,13 +266,7 @@ class UpsamplingDecoder(BaseEncoderDecoder):
 
             # ensure not to add unnecessary modules to output layer
             if idx_layer < len(self.layers) - 1:
-
                 decoder_layers.append(self.activation)
-
-                if self.batch_norm:
-                    decoder_layers.append(TimeDistributedBatchNorm2d(self.dims[idx - 1]))
-                if self.dropout > 0.0:
-                    decoder_layers.append(nn.Dropout(self.dropout, inplace=True))
 
         if self.nx % 2 != 0:
             decoder_layers.append(Crop(idx_lb=0, idx_ub=self.nx, ndim=self.nc))
@@ -334,11 +279,6 @@ class UpsamplingDecoder(BaseEncoderDecoder):
                 TimeDistributedLinear(self.latent_dim, self.prelatent_shape),
                 self.activation,
             ])
-
-            if self.batch_norm:
-                linear_layers.append(TimeDistributedBatchNorm1d(self.prelatent_shape))
-            if self.dropout > 0.0:
-                linear_layers.append(nn.Dropout(self.dropout, inplace=True))
 
             linear_layers.append(
                 nn.Unflatten(dim=2, unflattened_size=(self.dims[-1], self.prelatent_nx, self.prelatent_nx))
@@ -372,10 +312,7 @@ class TransposeDecoder(BaseEncoderDecoder):
                  nx: int,
                  nc: int,
                  layers: List[int],
-                 latent_dim: int,
-                 activation: nn.Module = nn.ReLU(inplace=True),
-                 dropout: float = 0.0,
-                 batch_norm: bool = False) -> None:
+                 latent_dim: int) -> None:
 
         """Decoder class with ConvTranspose2d.
 
@@ -389,15 +326,9 @@ class TransposeDecoder(BaseEncoderDecoder):
             List of layer sizes to use in the encoder / decoder.
         latent_dim: int
             Size of the latent space.
-        activation: nn.Module
-            Activation to use for the network.
-        dropout: float
-            Dropout rate for training.
-        batch_norm: bool
-            Flag to determine whether to use BatchNormalisation.
         """
 
-        super().__init__(nx, nc, layers, latent_dim, activation, dropout, batch_norm)
+        super().__init__(nx, nc, layers, latent_dim)
 
         # define convolutional architecture
         decoder_layers: List[nn.Module] = []
@@ -421,13 +352,7 @@ class TransposeDecoder(BaseEncoderDecoder):
 
             # ensure not to add unnecessary modules to output layer
             if idx_layer < len(self.layers) - 1:
-
                 decoder_layers.append(self.activation)
-
-                if self.batch_norm:
-                    decoder_layers.append(TimeDistributedBatchNorm2d(self.dims[idx - 1]))
-                if self.dropout > 0.0:
-                    decoder_layers.append(nn.Dropout(self.dropout, inplace=True))
 
         if self.nx % 2 != 0:
             decoder_layers.append(Crop(idx_lb=0, idx_ub=self.nx, ndim=self.nc))
@@ -440,11 +365,6 @@ class TransposeDecoder(BaseEncoderDecoder):
                 TimeDistributedLinear(self.latent_dim, self.prelatent_shape),
                 self.activation
             ])
-
-            if self.batch_norm:
-                linear_layers.append(TimeDistributedBatchNorm1d(self.prelatent_shape))
-            if self.dropout > 0.0:
-                linear_layers.append(nn.Dropout(self.dropout, inplace=True))
 
             linear_layers.append(
                 nn.Unflatten(dim=2, unflattened_size=(self.dims[-1], self.prelatent_nx, self.prelatent_nx))

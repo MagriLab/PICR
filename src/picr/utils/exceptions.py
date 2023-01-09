@@ -1,6 +1,6 @@
 from typing import Optional
 
-from .enums import eSolverFunction
+from .enums import eSystem
 
 
 class DimensionWarning(Warning):
@@ -66,7 +66,7 @@ class DimensionError(Exception):
 
 class SolverConsistencyError(Exception):
 
-    def __init__(self, solver_type: eSolverFunction) -> None:
+    def __init__(self, solver_type: eSystem) -> None:
 
         super().__init__()
 
@@ -76,7 +76,7 @@ class SolverConsistencyError(Exception):
 
         msg = f'You selected a solver type of: {str(self.solver_type)}, '
 
-        if self.solver_type == eSolverFunction.NONLINEAR:
+        if self.solver_type == eSystem.nonlinear:
             msg += 'please ensure C = 0'
 
         return msg
@@ -84,7 +84,7 @@ class SolverConsistencyError(Exception):
 
 class SolverConsistencyWarning(Warning):
 
-    def __init__(self, solver_type: eSolverFunction) -> None:
+    def __init__(self, solver_type: eSystem) -> None:
 
         super().__init__()
 
@@ -94,7 +94,7 @@ class SolverConsistencyWarning(Warning):
 
         msg = f'You selected a solver type of: {str(self.solver_type)}, '
 
-        if self.solver_type == eSolverFunction.NONLINEAR:
+        if self.solver_type == eSystem.nonlinear:
             msg += 'please note that C = 0 :: solving diffusion only.'
 
         return msg
