@@ -6,7 +6,6 @@ from typing import Callable, Dict, Optional
 
 import einops
 import numpy as np
-import opt_einsum as oe
 import torch
 import torch.backends.cudnn
 from absl import app, flags
@@ -148,12 +147,12 @@ def initialise_model() -> nn.Module:
     return model
 
 
-def set_corruption_fn(e_phi_fn: eCorruption,
-                      resolution: int,
-                      frequency: float,
-                      magnitude: float) -> ft.partial:
+def get_corruption(e_phi_fn: eCorruption,
+                   resolution: int,
+                   frequency: float,
+                   magnitude: float) -> torch.Tensor:
 
-    """Generate partial corruption function with given parameters.
+    """Generate base corruption field.
 
     Parameters
     ----------
@@ -168,18 +167,18 @@ def set_corruption_fn(e_phi_fn: eCorruption,
 
     Returns
     -------
-    phi_fn: ft.partial
-        Generated partial corruption function.
+    phi: torch.Tensor
+        Base corruption field to add.
     """
 
     x = torch.linspace(0.0, 2.0 * np.pi, resolution)
-    xx = torch.stack(torch.meshgrid(x, x), dim=-1).to(DEVICE)
+    xx = torch.stack(torch.meshgrid(x, x), dim=-1)
 
     # get corruption function
     _phi_fn = get_corruption_fn(e_phi_fn)
-    phi_fn = ft.partial(_phi_fn, x=xx, freq=frequency, limit=magnitude)                                   # type: ignore
+    phi = _phi_fn(xx, frequency, magnitude)
 
-    return phi_fn
+    return phi
 
 
 def get_boundaries(arr: torch.Tensor) -> torch.Tensor:
@@ -209,9 +208,8 @@ def get_boundaries(arr: torch.Tensor) -> torch.Tensor:
 def train_loop(model: nn.Module,
                dataloader: DataLoader,
                loss_fn: PILoss,
-               phi_fn: Callable[[], torch.Tensor],
+               phi: torch.Tensor,
                optimizer: Optional[torch.optim.Optimizer] = None,
-               s_lambda: float = 1e3,
                set_train: bool = False) -> LossTracker:
 
     """Run a single training / evaluation loop.
@@ -224,12 +222,10 @@ def train_loop(model: nn.Module,
         Generator to retrieve data for evaluation from.
     loss_fn: PILoss
         Loss function for calculating physics-informed aspect of the loss.
-    phi_fn: ft.partial
-        Function used to generate the required corruption field.
+    phi: torch.Tensor
+        Base corruption field to add.
     optimizer: Optional[torch.optim.Optimizer]
         Optimiser used to update the weights of the model, when applicable.
-    s_lambda: float
-        Scaling parameter for the loss.
     set_train: bool
         Determine whether run in training / evaluation mode.
 
@@ -255,12 +251,18 @@ def train_loop(model: nn.Module,
     for data in dataloader:
 
         # conduct inference on the batch
-        data = data.to(DEVICE)
+        data = data.to(DEVICE, nonblocking=True)
 
-        # create corrupted data
-        phi = phi_fn()
-        phi = einops.repeat(phi, 'i j -> b t u i j', b=data.size(0), t=data.size(1), u=data.size(2))
+        # corrupt the data
         zeta = data + phi
+
+        # add noise if applicable
+        if FLAGS.config.corruption.noise_std > 0.0:
+
+            mean = torch.zeros(*zeta.shape)
+            std = FLAGS.config.experiment.noise_std * torch.ones(*zeta.shape)
+
+            zeta += torch.normal(mean=mean, std=std).to(DEVICE)
 
         # predict u, phi
         u_prediction = model(zeta)
@@ -283,7 +285,7 @@ def train_loop(model: nn.Module,
         mean_phi_loss = torch.mean((phi_prediction - einops.reduce(phi_prediction, 'b t u i j -> i j', torch.mean)) ** 2)
 
         # LOSS :: 05 :: Total Loss
-        total_loss = r_u_loss + s_lambda * (boundary_loss + dphi_dt_loss + mean_phi_loss)
+        total_loss = r_u_loss + FLAGS.config.training.lambda_weight * (boundary_loss + dphi_dt_loss + mean_phi_loss)
 
         # LOSS :: 06 :: u, \phi -- Clean
         clean_u_loss = torch.sqrt(torch.sum((data - u_prediction) ** 2) / torch.sum(data ** 2))
@@ -309,7 +311,7 @@ def train_loop(model: nn.Module,
     # normalise and find absolute value
     batched_residual_loss = float(abs(batched_residual_loss)) / len(dataloader.dataset)                   # type: ignore
     batched_boundary_loss = float(abs(batched_boundary_loss)) / len(dataloader.dataset)                   # type: ignore
-    batched_phi_dt_loss = float(abs(batched_phi_dt_loss)) / len(dataloader.dataset)                     # type: ignore
+    batched_phi_dt_loss = float(abs(batched_phi_dt_loss)) / len(dataloader.dataset)                       # type: ignore
     batched_phi_mean_loss = float(abs(batched_phi_mean_loss)) / len(dataloader.dataset)                   # type: ignore
     batched_total_loss = float(abs(batched_total_loss)) / len(dataloader.dataset)                         # type: ignore
     batched_clean_u_loss = float(abs(batched_clean_u_loss)) / len(dataloader.dataset)                     # type: ignore
@@ -377,12 +379,15 @@ def main(_) -> None:
     u_max = torch.max(u_all).item()
     phi_limit = config.corruption.phi_magnitude * u_max
 
-    phi_fn = set_corruption_fn(
+    phi = get_corruption(
         config.corruption.phi_fn,
         config.data.resolution,
         config.corruption.phi_frequency,
         phi_limit
     )
+
+    # pre-allocate corruption to GPU
+    phi = phi.to(DEVICE)
 
     loss_fn = get_loss_fn(config, DEVICE)
 
@@ -393,7 +398,7 @@ def main(_) -> None:
     optimizer = torch.optim.Adam(model.parameters(), lr=config.training.learning_rate, weight_decay=config.training.l2)
 
     # generate training functions
-    _loop_params = dict(model=model, loss_fn=loss_fn, phi_fn=phi_fn)
+    _loop_params = dict(model=model, loss_fn=loss_fn, phi=phi)
 
     train_fn = ft.partial(train_loop, **_loop_params, dataloader=train_loader, optimizer=optimizer, set_train=True)
     validation_fn = ft.partial(train_loop, **_loop_params, dataloader=validation_loader, set_train=False)

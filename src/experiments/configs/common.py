@@ -31,6 +31,7 @@ def get_config() -> ml_collections.ConfigDict:
     config.training.learning_rate = 3e-4
     config.training.l2 = 0.0
     config.training.fwt_lb = 1.0
+    config.training.lambda_weight = 1e3
 
     # corruption configuration
     config.corruption = ml_collections.ConfigDict()
@@ -38,5 +39,7 @@ def get_config() -> ml_collections.ConfigDict:
     config.corruption.phi_fn = eCorruption.rastrigin
     config.corruption.phi_frequency = 3.0
     config.corruption.phi_magnitude = 0.5
+
+    config.corruption.noise_std = 0.0
 
     return config
