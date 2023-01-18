@@ -1,4 +1,3 @@
-from types import ModuleType
 from typing import Callable
 
 import numpy as np
@@ -7,10 +6,9 @@ import torch
 
 from .utils.checks import ValidateDimension
 from .utils.enums import eCorruption
-from .utils.types import T
 
 
-def get_corruption_fn(e_corruption: eCorruption) -> Callable[[T, float, float], T]:
+def get_corruption_fn(e_corruption: eCorruption) -> Callable[[torch.Tensor, float, float], torch.Tensor]:
 
     """Corruption Function Factory.
 
@@ -21,7 +19,7 @@ def get_corruption_fn(e_corruption: eCorruption) -> Callable[[T, float, float], 
 
     Returns
     -------
-    Callable[[T, float, float], T]
+    Callable[[torch.Tensor, float, float], torch.Tensor]
         Corruption function.
     """
 
@@ -38,13 +36,13 @@ def get_corruption_fn(e_corruption: eCorruption) -> Callable[[T, float, float], 
 
 
 @ValidateDimension(ndim=3)
-def ackley(x: T, freq: float, limit: float = 1.0) -> T:
+def ackley(x: torch.Tensor, freq: float, limit: float = 1.0) -> torch.Tensor:
 
     """Generic implementation of Ackley function -- parameterised by frequency.
 
     Parameters
     ----------
-    x: T
+    x: torch.Tensor
         Spatial grid on which to compute the Ackley function.
     freq: float
         Parameterised frequency of the Ackley function.
@@ -53,36 +51,28 @@ def ackley(x: T, freq: float, limit: float = 1.0) -> T:
 
     Returns
     -------
-    fx: T
+    fx: torch.Tensor
         Ackley function on given grid.
     """
 
-    lib: ModuleType
-    if isinstance(x, np.ndarray):
-        lib = np
-    elif isinstance(x, torch.Tensor):
-        lib = torch
-    else:
-        raise ValueError('Unsupported data structure.')
+    t1 = -0.2 * torch.sqrt(oe.contract('iju -> ij', (x - np.pi) ** 2) / 2)
+    t2 = oe.contract('iju -> ij', torch.cos(freq * (x - np.pi))) / 2
 
-    t1 = -0.2 * lib.sqrt(oe.contract('iju -> ij', (x - np.pi) ** 2) / 2)
-    t2 = oe.contract('iju -> ij', lib.cos(freq * (x - np.pi))) / 2
+    fx = -20 * torch.exp(t1) - torch.exp(t2) + 20 + torch.exp(torch.tensor(1.0))
 
-    fx = -20 * lib.exp(t1) - lib.exp(t2) + 20 + lib.exp(1)
-
-    fx = limit * (fx - lib.min(fx)) / (lib.max(fx) - lib.min(fx))
+    fx = limit * (fx - torch.min(fx)) / (torch.max(fx) - torch.min(fx))
 
     return fx
 
 
 @ValidateDimension(ndim=3)
-def rastrigin(x: T, freq: float, limit: float = 1.0) -> T:
+def rastrigin(x: torch.Tensor, freq: float, limit: float = 1.0) -> torch.Tensor:
 
     """Generic implementation of Rastrigin function -- parameterised by frequency.
 
     Parameters
     ----------
-    x: T
+    x: torch.Tensor
         Spatial grid on which to compute the Rastrigin function.
     freq: float
         Parameterised frequency of the Rastrigin function.
@@ -91,19 +81,11 @@ def rastrigin(x: T, freq: float, limit: float = 1.0) -> T:
 
     Returns
     -------
-    T
+    torch.Tensor
         Rastrigin function on given grid.
     """
 
-    lib: ModuleType
-    if isinstance(x, np.ndarray):
-        lib = np
-    elif isinstance(x, torch.Tensor):
-        lib = torch
-    else:
-        raise ValueError('Unsupported data structure.')
-
-    val = 10.0 * 2 + oe.contract('iju -> ij', (x - np.pi) ** 2 - 10.0 * lib.cos(freq * (x - np.pi)))
-    val = limit * (val - lib.min(val)) / (lib.max(val) - lib.min(val))
+    val = 10.0 * 2 + oe.contract('iju -> ij', (x - np.pi) ** 2 - 10.0 * torch.cos(freq * (x - np.pi)))
+    val = limit * (val - torch.min(val)) / (torch.max(val) - torch.min(val))
 
     return val

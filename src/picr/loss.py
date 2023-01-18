@@ -1,13 +1,8 @@
-from __future__ import annotations
-
-from typing import Any, TypeVar
-
 import einops
 import opt_einsum as oe
 import torch
 from kolsol.torch.solver import KolSol
 
-from .solvers.proto import Solver
 from .solvers.torch import LinearCDS, NonlinearCDS
 from .utils.checks import ValidateDimension
 from .utils.enums import eSystem
@@ -16,7 +11,7 @@ from .utils.types import ExperimentConfig
 
 class PILoss:
 
-    solver: Solver[torch.Tensor]
+    solver: KolSol
 
     def __init__(self, dt: float, fwt_lb: float) -> None:
 
@@ -101,8 +96,6 @@ class PILoss:
 
 class LinearCDLoss(PILoss):
 
-    solver: Solver[torch.Tensor]
-
     def __init__(self, nk: int, c: float, re: float, dt: float, fwt_lb: float, device: torch.device) -> None:
 
         """Linear Convection-Diffusion Loss.
@@ -129,8 +122,6 @@ class LinearCDLoss(PILoss):
 
 class NonlinearCDLoss(PILoss):
 
-    solver: Solver[torch.Tensor]
-
     def __init__(self, nk: int, re: float, dt: float, fwt_lb: float, device: torch.device) -> None:
 
         """Non-linear Convection-Diffusion Loss.
@@ -154,8 +145,6 @@ class NonlinearCDLoss(PILoss):
 
 
 class KolmogorovLoss(PILoss):
-
-    solver: Solver[torch.Tensor]
 
     def __init__(self, nk: int, re: float, dt: float, fwt_lb: float, device: torch.device) -> None:
 

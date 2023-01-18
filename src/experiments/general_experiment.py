@@ -49,6 +49,14 @@ class Job:
 
 def run_job(job: Job) -> None:
 
+    """Run base_experiment.py for the given job.
+
+    Parameters
+    ==========
+    job: Job
+        Job containing the case and experiment to run.
+    """
+
     gpu_id = queue.get()
 
     try:

@@ -8,7 +8,6 @@ from kolsol.numpy.solver import KolSol
 
 from ..picr.experimental import define_path as pisr_flags
 from ..picr.solvers.numpy import KolSol, LinearCDS, NonlinearCDS
-from ..picr.solvers.proto import Solver
 from ..picr.utils.enums import eSystem
 
 
@@ -105,9 +104,9 @@ def write_h5(data: Dict[str, Any]) -> None:
             hf.create_dataset(k, data=v)
 
 
-def get_solver() -> Solver:
+def get_solver() -> KolSol:
 
-    solver: Solver
+    solver: KolSol
     match FLAGS.system:
 
         case eSystem.linear:
@@ -141,7 +140,7 @@ def main(_) -> None:
 
     """Generate Kolmogorov Flow Data."""
 
-    print('00 :: Initialising Kolmogorov Flow Solver.')
+    print('Initialising Kolmogorov Flow Solver.')
 
     setup_directory()
 
@@ -158,13 +157,15 @@ def main(_) -> None:
     # setup recording arrays - only need to record fourier field
     velocity_hat_arr = np.zeros(shape=(nt, solver.nk_grid, solver.nk_grid, NDIM), dtype=np.complex128)
 
-    # integrate over transients
-    msg = '01 :: Integrating over transients.'
-    for _ in tqdm.trange(nt_transients, desc=msg):
-        field_hat += FLAGS.dt * solver.dynamics(field_hat)
+    # integrate over transients if running Kolmogorov case
+    if FLAGS.system == eSystem.linear:
+
+        msg = 'Integrating over transients'
+        for _ in tqdm.trange(nt_transients, desc=msg):
+            field_hat += FLAGS.dt * solver.dynamics(field_hat)
 
     # integrate over simulation domain
-    msg = '02 :: Integrating over simulation domain'
+    msg = 'Integrating over simulation domain'
     for t in tqdm.trange(nt, desc=msg):
 
         # time integrate
