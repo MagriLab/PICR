@@ -1,6 +1,6 @@
 import ml_collections
 
-from src.picr.utils.enums import eCorruption, eDecoder
+from src.picr.utils.enums import eCorruption, eCorruptionOperation, eDecoder
 
 
 def get_config() -> ml_collections.ConfigDict:
@@ -39,6 +39,7 @@ def get_config() -> ml_collections.ConfigDict:
     config.corruption.phi_fn = eCorruption.rastrigin
     config.corruption.phi_frequency = 3.0
     config.corruption.phi_magnitude = 0.5
+    config.corruption.phi_operation = eCorruptionOperation.additive
 
     config.corruption.noise_std = 0.0
 

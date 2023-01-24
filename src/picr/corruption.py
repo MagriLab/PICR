@@ -5,7 +5,7 @@ import opt_einsum as oe
 import torch
 
 from .utils.checks import ValidateDimension
-from .utils.enums import eCorruption
+from .utils.enums import eCorruption, eCorruptionOperation
 
 
 def get_corruption_fn(e_corruption: eCorruption) -> Callable[[torch.Tensor, float, float], torch.Tensor]:
@@ -89,3 +89,17 @@ def rastrigin(x: torch.Tensor, freq: float, limit: float = 1.0) -> torch.Tensor:
     val = limit * (val - torch.min(val)) / (torch.max(val) - torch.min(val))
 
     return val
+
+
+def corruption_operation(data: torch.Tensor, phi: torch.Tensor, e_operation: eCorruptionOperation) -> torch.Tensor:
+
+    match e_operation:
+
+        case eCorruptionOperation.additive:
+            return data + phi
+
+        case eCorruptionOperation.multiplicative:
+            return data * (1 + phi)
+
+        case _:
+            raise ValueError('Incompatible corruption operation.')

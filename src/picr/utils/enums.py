@@ -15,3 +15,8 @@ class eSystem(enum.Enum):
 class eCorruption(enum.Enum):
     ackley = 'ackley'
     rastrigin = 'rastrigin'
+
+
+class eCorruptionOperation(enum.Enum):
+    additive = 'additive'
+    multiplicative = 'multiplicative'

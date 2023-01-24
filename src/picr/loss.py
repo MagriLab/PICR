@@ -3,6 +3,7 @@ import opt_einsum as oe
 import torch
 from kolsol.torch.solver import KolSol
 
+from .solvers.proto import Solver
 from .solvers.torch import LinearCDS, NonlinearCDS
 from .utils.checks import ValidateDimension
 from .utils.enums import eSystem
@@ -11,7 +12,7 @@ from .utils.types import ExperimentConfig
 
 class PILoss:
 
-    solver: KolSol
+    solver: Solver
 
     def __init__(self, dt: float, fwt_lb: float) -> None:
 
