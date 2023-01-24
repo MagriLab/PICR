@@ -2,7 +2,7 @@ import csv
 import functools as ft
 import warnings
 from pathlib import Path
-from typing import Callable, Dict, Optional
+from typing import Optional
 
 import einops
 import numpy as np
@@ -17,7 +17,7 @@ from wandb.wandb_run import Run
 
 import wandb
 
-from ..picr.corruption import get_corruption_fn
+from ..picr.corruption import corruption_operation, get_corruption_fn
 from ..picr.data import generate_dataloader, load_data, train_validation_split
 from ..picr.experimental import define_path as picr_flags
 from ..picr.loss import get_loss_fn, PILoss
@@ -253,16 +253,19 @@ def train_loop(model: nn.Module,
         # conduct inference on the batch
         data = data.to(DEVICE, nonblocking=True)
 
-        # corrupt the data
-        zeta = data + phi
-
         # add noise if applicable
         if FLAGS.config.corruption.noise_std > 0.0:
 
-            mean = torch.zeros(*zeta.shape)
-            std = FLAGS.config.experiment.noise_std * torch.ones(*zeta.shape)
+            mean = torch.zeros(*data.shape)
+            std = FLAGS.config.experiment.noise_std * torch.ones(*data.shape)
 
-            zeta += torch.normal(mean=mean, std=std).to(DEVICE)
+            maybe_noisy_phi = torch.normal(mean=mean, std=std).to(DEVICE)
+
+        else:
+            maybe_noisy_phi = phi
+
+        # corrupt the data
+        zeta = corruption_operation(data, maybe_noisy_phi, FLAGS.config.phi_operation)
 
         # predict u, phi
         u_prediction = model(zeta)
@@ -317,7 +320,7 @@ def train_loop(model: nn.Module,
     batched_clean_u_loss = float(abs(batched_clean_u_loss)) / len(dataloader.dataset)                     # type: ignore
     batched_clean_phi_loss = float(abs(batched_clean_phi_loss)) / len(dataloader.dataset)                 # type: ignore
 
-    loss_dict: Dict[str, float] = {
+    loss_dict: dict[str, float] = {
         'residual_loss': batched_residual_loss,
         'boundary_loss': batched_boundary_loss,
         'phi_dot_loss': batched_phi_dt_loss,

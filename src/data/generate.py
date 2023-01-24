@@ -6,8 +6,10 @@ import tqdm
 from absl import app, flags
 from kolsol.numpy.solver import KolSol
 
+from src.picr.solvers.proto import Solver
+
 from ..picr.experimental import define_path as pisr_flags
-from ..picr.solvers.numpy import KolSol, LinearCDS, NonlinearCDS
+from ..picr.solvers.numpy import LinearCDS, NonlinearCDS
 from ..picr.utils.enums import eSystem
 
 
@@ -104,9 +106,9 @@ def write_h5(data: Dict[str, Any]) -> None:
             hf.create_dataset(k, data=v)
 
 
-def get_solver() -> KolSol:
+def get_solver() -> Solver:
 
-    solver: KolSol
+    solver: Solver
     match FLAGS.system:
 
         case eSystem.linear:
@@ -138,14 +140,14 @@ def get_solver() -> KolSol:
 
 def main(_) -> None:
 
-    """Generate Kolmogorov Flow Data."""
+    """Generate System Flow Data."""
 
-    print('Initialising Kolmogorov Flow Solver.')
+    print('Initialising Flow Solver.')
 
     setup_directory()
 
     solver = get_solver()
-    field_hat = solver.random_field(magnitude=10.0, sigma=1.2)
+    field_hat = solver.random_field(magnitude=10.0, sigma=1.2, k_offset=None)
 
     # define time-arrays for simulation run
     t_arange = np.arange(0.0, FLAGS.time_simulation, FLAGS.dt)
@@ -158,7 +160,7 @@ def main(_) -> None:
     velocity_hat_arr = np.zeros(shape=(nt, solver.nk_grid, solver.nk_grid, NDIM), dtype=np.complex128)
 
     # integrate over transients if running Kolmogorov case
-    if FLAGS.system == eSystem.linear:
+    if FLAGS.system == eSystem.kolmogorov:
 
         msg = 'Integrating over transients'
         for _ in tqdm.trange(nt_transients, desc=msg):

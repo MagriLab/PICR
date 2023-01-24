@@ -1,5 +1,3 @@
-from typing import Union
-
 import opt_einsum as oe
 import torch
 from kolsol.torch.solver import KolSol
@@ -12,7 +10,7 @@ class LinearCDS(KolSol):
                  c: float,
                  re: float,
                  ndim: int = 2,
-                 device: Union[torch.device, str] = torch.device('cpu')) -> None:
+                 device: torch.device | str = torch.device('cpu')) -> None:
 
         """Linear Convection-Diffusion Solver.
 
@@ -26,7 +24,7 @@ class LinearCDS(KolSol):
             Reynolds number of the flow.
         ndim: int, default=2
             Number of dimensions to solve for.
-        device: Union[torch.device, str]
+        device: torch.device | str
             Device on which to run solver.
         """
 
@@ -78,7 +76,7 @@ class NonlinearCDS(KolSol):
                  nk: int,
                  re: float,
                  ndim: int = 2,
-                 device: Union[torch.device, str] = torch.device('cpu')) -> None:
+                 device: torch.device | str = torch.device('cpu')) -> None:
 
         """Non-Linear Convection Diffusion Solver.
 
@@ -90,7 +88,7 @@ class NonlinearCDS(KolSol):
             Reynolds number of the flow.
         ndim: int, default=2
             Number of dimensions to solve for.
-        device: Union[torch.device, str]
+        device: torch.device | str
             Device on which to run solver.
         """
 
