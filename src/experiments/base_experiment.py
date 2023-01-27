@@ -17,7 +17,7 @@ from wandb.wandb_run import Run
 
 import wandb
 
-from ..picr.corruption import corruption_operation, get_corruption_fn
+from ..picr.corruption import corruption_operation, get_corruption_fn, phi_from_zeta_u
 from ..picr.data import generate_dataloader, load_data, train_validation_split
 from ..picr.experimental import define_path as picr_flags
 from ..picr.loss import get_loss_fn, PILoss
@@ -269,7 +269,7 @@ def train_loop(model: nn.Module,
 
         # predict u, phi
         u_prediction = model(zeta)
-        phi_prediction = zeta - u_prediction
+        phi_prediction = phi_from_zeta_u(zeta, data, FLAGS.config.phi_operation)
 
         # LOSS :: 01 :: Clean Velocity Field :: || R(\hat{u}) ||
         r_u_loss = loss_fn.calc_residual_loss(u_prediction)
