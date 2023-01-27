@@ -93,6 +93,23 @@ def rastrigin(x: torch.Tensor, freq: float, limit: float = 1.0) -> torch.Tensor:
 
 def corruption_operation(data: torch.Tensor, phi: torch.Tensor, e_operation: eCorruptionOperation) -> torch.Tensor:
 
+    """Corrupt data with respect to relevant corruption operation.
+
+    Parameters
+    ----------
+    data: torch.Tensor
+        Field to corrupt.
+    phi: torch.Tensor
+        Corruption field to incorporate into observations.
+    e_operation: eCorruptionOperation
+        Operation to use to corrupt the data.
+
+    Returns
+    -------
+    torch.Tensor
+        Corrupted field.
+    """
+
     match e_operation:
 
         case eCorruptionOperation.additive:
@@ -100,6 +117,37 @@ def corruption_operation(data: torch.Tensor, phi: torch.Tensor, e_operation: eCo
 
         case eCorruptionOperation.multiplicative:
             return data * (1 + phi)
+
+        case _:
+            raise ValueError('Incompatible corruption operation.')
+
+
+def phi_from_zeta_u(zeta: torch.Tensor, data: torch.Tensor, e_operation: eCorruptionOperation) -> torch.Tensor:
+
+    """Recover corruption field from corrupted observations and underlying data.
+
+    Parameters
+    ----------
+    zeta: torch.Tensor
+        Corrupted observations.
+    data: torch.Tensor
+        Underlying solution.
+    e_operation: eCorruptionOperation
+        Operation used to corrupt the observations.
+
+    Returns
+    -------
+    torch.Tensor
+        Recovered corruption field.
+    """
+
+    match e_operation:
+
+        case eCorruptionOperation.additive:
+            return zeta - data
+
+        case eCorruptionOperation.multiplicative:
+            return (zeta / data) - 1.0
 
         case _:
             raise ValueError('Incompatible corruption operation.')
