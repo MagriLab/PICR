@@ -251,13 +251,13 @@ def train_loop(model: nn.Module,
     for data in dataloader:
 
         # conduct inference on the batch
-        data = data.to(DEVICE, nonblocking=True)
+        data = data.to(DEVICE, non_blocking=True)
 
         # add noise if applicable
         if FLAGS.config.corruption.noise_std > 0.0:
 
             mean = torch.zeros(*data.shape)
-            std = FLAGS.config.experiment.noise_std * torch.ones(*data.shape)
+            std = FLAGS.config.corruption.noise_std * torch.ones(*data.shape)
 
             maybe_noisy_phi = torch.normal(mean=mean, std=std).to(DEVICE)
 
