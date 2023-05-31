@@ -4,6 +4,7 @@
 .pytest_cache/
 .mypy_cache/
 .scripts/
+notes/
 
 __pycache__/
 
