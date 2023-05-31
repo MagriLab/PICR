@@ -259,17 +259,17 @@ def train_loop(model: nn.Module,
             mean = torch.zeros(*data.shape)
             std = FLAGS.config.corruption.noise_std * torch.ones(*data.shape)
 
-            maybe_noisy_phi = torch.normal(mean=mean, std=std).to(DEVICE)
+            maybe_noisy_phi = phi + torch.normal(mean=mean, std=std).to(DEVICE)
 
         else:
             maybe_noisy_phi = phi
 
         # corrupt the data
-        zeta = corruption_operation(data, maybe_noisy_phi, FLAGS.config.phi_operation)
+        zeta = corruption_operation(data, maybe_noisy_phi, FLAGS.config.corruption.phi_operation)
 
         # predict u, phi
         u_prediction = model(zeta)
-        phi_prediction = phi_from_zeta_u(zeta, data, FLAGS.config.phi_operation)
+        phi_prediction = phi_from_zeta_u(zeta, data, FLAGS.config.corruption.phi_operation)
 
         # LOSS :: 01 :: Clean Velocity Field :: || R(\hat{u}) ||
         r_u_loss = loss_fn.calc_residual_loss(u_prediction)

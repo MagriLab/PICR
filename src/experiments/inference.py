@@ -1,5 +1,7 @@
 import warnings
-from typing import Any
+
+
+rom typing import Any
 
 import h5py
 import numpy as np
@@ -199,13 +201,13 @@ def inference(model: nn.Module,
             mean = torch.zeros(*batch_data.shape)
             std = FLAGS.config.corruption.noise_std * torch.ones(*batch_data.shape)
 
-            maybe_noisy_phi = torch.normal(mean=mean, std=std).to(DEVICE)
+            maybe_noisy_phi = phi + torch.normal(mean=mean, std=std).to(DEVICE)
 
         else:
             maybe_noisy_phi = phi
 
         # corrupt the data
-        zeta = corruption_operation(batch_data, maybe_noisy_phi, FLAGS.config.phi_operation)
+        zeta = corruption_operation(batch_data, maybe_noisy_phi, FLAGS.config.corruption.phi_operation)
 
         # predict u, phi
         batched_u_predictions = model(zeta)
